@@ -241,7 +241,7 @@ test.describe("settings", () => {
     await open(page);
     await page.click("#settings-btn");
     await page.locator("#settings-form").getByText("混合", { exact: true }).click();
-    await page.selectOption("select[name=theme]", "dark");
+    await page.locator("#settings-form").getByText("深色", { exact: true }).click();
     await page.selectOption("select[name=language]", "en");
     await page.locator("#settings-form").getByText("保存", { exact: true }).click();
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
@@ -249,6 +249,74 @@ test.describe("settings", () => {
     await expect(page.locator("#status")).toContainText("Model: MathCraft Mixed | Status: Ready");
     const s = await mock<{ mode: string; theme: string; language: string }>(page, "settings");
     expect([s.mode, s.theme, s.language]).toEqual(["mixed", "dark", "en"]);
+  });
+
+  test("theme options apply on click, before saving", async ({ page }) => {
+    await open(page); // saved theme: light
+    await page.click("#settings-btn");
+    const themes = page.locator("#settings-form .field");
+    await expect(themes.getByText("跟随系统", { exact: true })).toBeVisible();
+    await expect(themes.locator("input[value=light]")).toBeChecked();
+
+    await themes.getByText("深色", { exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect.poll(() => mock<string | null>(page, "windowTheme")).toBe("dark");
+    await expect(page.locator("#settings-dialog")).toBeVisible(); // still previewing
+
+    await themes.getByText("浅色", { exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect.poll(() => mock<string | null>(page, "windowTheme")).toBe("light");
+    expect(await mock<string>(page, "settings.theme")).toBe("light"); // nothing saved yet
+  });
+
+  test("follow system previews the system appearance and tracks changes", async ({ page }) => {
+    await page.emulateMedia({ colorScheme: "dark" });
+    await open(page); // saved theme: light
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await page.click("#settings-btn");
+    await page.locator("#settings-form .field").getByText("跟随系统", { exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect.poll(() => mock<string | null>(page, "windowTheme")).toBeNull();
+
+    // A system appearance change during the preview must not snap back to the saved theme.
+    await page.emulateMedia({ colorScheme: "light" });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await page.emulateMedia({ colorScheme: "dark" });
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    await page.locator("#settings-form").getByText("保存", { exact: true }).click();
+    await expect.poll(() => mock<string>(page, "settings.theme")).toBe("auto");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  });
+
+  test("cancel and Esc restore the saved theme", async ({ page }) => {
+    await open(page); // saved theme: light
+    const themes = page.locator("#settings-form .field");
+    await page.click("#settings-btn");
+    await themes.getByText("深色", { exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await page.locator("#settings-form").getByText("取消", { exact: true }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    await expect.poll(() => mock<string | null>(page, "windowTheme")).toBe("light");
+
+    await page.click("#settings-btn");
+    await themes.getByText("深色", { exact: true }).click();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#settings-dialog")).toBeHidden();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+    expect(await mock<string>(page, "settings.theme")).toBe("light");
+
+    // Reopening shows the saved choice, not the abandoned preview.
+    await page.click("#settings-btn");
+    await expect(themes.locator("input[value=light]")).toBeChecked();
+  });
+
+  test("theme can be chosen from the keyboard", async ({ page }) => {
+    await open(page);
+    await page.click("#settings-btn");
+    await page.locator("#settings-form input[name=theme][value=light]").focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 
   test("external model fields appear and connection can be tested", async ({ page }) => {

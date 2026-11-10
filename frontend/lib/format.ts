@@ -204,3 +204,15 @@ export function errorCode(err: unknown): { code: "MODELS_MISSING" | "EMPTY_RESUL
   }
   return { code: "OTHER", detail: msg };
 }
+
+export type ThemeSetting = "auto" | "light" | "dark";
+
+/** The palette to paint for a setting; "auto" follows the system appearance. */
+export function resolveTheme(theme: ThemeSetting, systemDark: boolean): "light" | "dark" {
+  return theme === "auto" ? (systemDark ? "dark" : "light") : theme;
+}
+
+/** Native window appearance: null hands control back to the system. */
+export function nativeTheme(theme: ThemeSetting): "light" | "dark" | null {
+  return theme === "auto" ? null : theme;
+}

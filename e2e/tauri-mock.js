@@ -28,6 +28,7 @@
     models: seed.models || { formula: true, mixed: true, text: true },
     clipboard: "",
     hotkeySuspended: false,
+    windowTheme: "unset",
     calls: [],
     // queue of scripted outcomes for capture / recognize: {text, score?, flags?} | null | {error}
     outcomes: seed.outcomes || [],
@@ -116,6 +117,9 @@
       state.clipboard = text;
     },
     "plugin:dialog|save": () => state.savePath,
+    "plugin:window|set_theme": ({ value }) => {
+      state.windowTheme = value;
+    },
     "plugin:event|listen": ({ event, handler }) => {
       if (!listeners.has(event)) listeners.set(event, []);
       listeners.get(event).push(handler);

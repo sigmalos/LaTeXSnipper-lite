@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { save } from "@tauri-apps/plugin-dialog";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { Entry, Kind, Mode } from "./format";
 
 export interface Settings {
@@ -60,6 +61,8 @@ export const api = {
   favorites: (op: ListOp) => invoke<Entry[]>("favorite_op", op),
   suspendHotkey: () => invoke<void>("suspend_hotkey"),
   resumeHotkey: () => invoke<void>("resume_hotkey"),
+  /** Native appearance for window chrome, menus and form controls; null = follow system. */
+  setWindowTheme: (theme: "light" | "dark" | null) => getCurrentWindow().setTheme(theme),
   copy: (text: string) => writeText(text),
   saveDialog: (defaultPath: string, ext: string, label: string) =>
     save({ defaultPath, filters: [{ name: label, extensions: [ext] }] }),

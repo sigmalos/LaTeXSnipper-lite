@@ -691,6 +691,30 @@ input[type="radio"] {
   gap: 10px;
 }
 
+/* A segmented control laid out like the other grid fields (caption above, 28px tall). */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.field .segmented {
+  display: flex;
+  align-self: stretch;
+  height: 28px;
+}
+.field .segmented label {
+  flex: 1;
+}
+.field .segmented span {
+  display: block;
+  padding: 0 8px;
+  line-height: 22px;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .segmented {
   display: inline-flex;
   align-self: flex-start;

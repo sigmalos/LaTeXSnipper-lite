@@ -7,8 +7,10 @@ import {
   errorCode,
   formatAccelerator,
   joinPdfPages,
+  nativeTheme,
   orderedEntries,
   parsePageRange,
+  resolveTheme,
   toMarkdown,
   toTexDocument,
   wrapLatex,
@@ -39,10 +41,21 @@ function toast(message: string, error = false): void {
   setTimeout(() => el.remove(), error ? 4200 : 2200);
 }
 
+// The theme on screen. Differs from snap.settings.theme while Settings previews one.
+let activeTheme: Settings["theme"] = "auto";
+const systemDark = matchMedia("(prefers-color-scheme: dark)");
+
 function applyTheme(theme: Settings["theme"]): void {
-  const dark = theme === "dark" || (theme === "auto" && matchMedia("(prefers-color-scheme: dark)").matches);
-  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  activeTheme = theme;
+  document.documentElement.dataset.theme = resolveTheme(theme, systemDark.matches);
+  // For "auto" the media query flips once the window follows the system again,
+  // and the listener below repaints with the right palette.
+  api.setWindowTheme(nativeTheme(theme)).catch(() => undefined);
 }
+
+systemDark.addEventListener("change", () => {
+  document.documentElement.dataset.theme = resolveTheme(activeTheme, systemDark.matches);
+});
 
 function modeLabel(mode: Mode): string {
   return t(mode === "formula" ? "公式" : mode === "mixed" ? "混合" : "纯文字");
@@ -510,7 +523,7 @@ function openSettings(): void {
   form.querySelectorAll<HTMLInputElement>("input[type=radio]").forEach((r) => {
     r.checked = (s as unknown as Record<string, unknown>)[r.name] === r.value;
   });
-  for (const k of ["theme", "language", "pdf_dpi", "external_base_url", "external_model", "external_api_key", "external_timeout_sec", "external_custom_prompt"] as const) {
+  for (const k of ["language", "pdf_dpi", "external_base_url", "external_model", "external_api_key", "external_timeout_sec", "external_custom_prompt"] as const) {
     field<HTMLInputElement>(k).value = String(s[k]);
   }
   $<HTMLInputElement>("data-dir").value = snap.data_dir;
@@ -523,7 +536,12 @@ function openSettings(): void {
 
 $("settings-btn").addEventListener("click", openSettings);
 
-form.addEventListener("change", syncExternalVisibility);
+form.addEventListener("change", (e) => {
+  syncExternalVisibility();
+  // Preview the theme on click; Save keeps it, Cancel/Esc restores the saved one.
+  const target = e.target as HTMLInputElement;
+  if (target.name === "theme" && target.checked) applyTheme(target.value as Settings["theme"]);
+});
 
 $("test-external").addEventListener("click", async () => {
   const out = $("test-result");
@@ -536,18 +554,21 @@ $("test-external").addEventListener("click", async () => {
 });
 
 $<HTMLDialogElement>("settings-dialog").addEventListener("close", async () => {
-  if ($<HTMLDialogElement>("settings-dialog").returnValue !== "save") return;
+  if ($<HTMLDialogElement>("settings-dialog").returnValue !== "save") {
+    applyTheme(snap.settings.theme);
+    return;
+  }
   try {
     snap.settings = await api.saveSettings(readSettingsForm());
     applyTheme(snap.settings.theme);
     applyLanguage();
     toast(t("设置已保存"));
   } catch (e) {
+    applyTheme(snap.settings.theme);
     toast(errorCode(e).detail, true);
   }
 });
 
-matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => applyTheme(snap.settings.theme));
 
 // ------------------------------------------------------------------ hotkey
 
