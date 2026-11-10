@@ -1,5 +1,5 @@
 // Injected before the app loads. Emulates the Tauri IPC bridge with an
-// in-memory backend that mirrors src-tauri/src/{commands,store}.rs semantics.
+// in-memory backend that mirrors backend/src/{commands,store}.rs semantics.
 (() => {
   const seed = window.__MOCK_SEED__ || {};
   const callbacks = new Map();

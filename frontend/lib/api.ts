@@ -1,4 +1,4 @@
-// Typed wrappers around the Rust commands in src-tauri/src/commands.rs.
+// Typed wrappers around the Rust commands in backend/src/commands.rs.
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";

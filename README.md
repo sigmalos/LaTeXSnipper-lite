@@ -29,7 +29,7 @@
 ```sh
 npm install
 npm run tauri dev           # 开发模式
-npm run dmg                 # 生成 src-tauri/target/release/bundle/dmg/*.dmg
+npm run dmg                 # 生成 backend/target/release/bundle/dmg/*.dmg
 ```
 
 需要 Rust（版本由 `rust-toolchain.toml` 固定）和 Node 20+。
@@ -43,16 +43,16 @@ npm run test:e2e            # 界面 E2E（Playwright · WebKit，IPC 由 e2e/ta
 ./scripts/smoke-dmg.sh      # 安装包 E2E：挂载 DMG、检查链接、无界面识别、启动 GUI
 ```
 
-- `src-tauri/tests/ocr_parity.rs` 用真实模型跑 `tests/fixtures/*.png`，结果必须与原 Python MathCraft 的输出（`python_reference.json`）完全一致
+- `backend/tests/ocr_parity.rs` 用真实模型跑 `tests/fixtures/*.png`，结果必须与原 Python MathCraft 的输出（`python_reference.json`）完全一致
 - Tauri 的 WebDriver 不支持 macOS，所以界面 E2E 在同引擎的 WebKit 上运行，后端由模拟层替代；真实后端由 Rust 集成测试和 `smoke-dmg.sh` 覆盖
 
 ## 结构
 
 ```
-src/                    前端（TypeScript，无框架）
+frontend/               前端（TypeScript，无框架）
   main.ts               界面逻辑
   lib/                  format / i18n / math(MathJax) / ink / pdf / api
-src-tauri/src/
+backend/src/            后端（Rust + Tauri）
   ocr/                  MathCraft OCR 的 Rust 移植：模型、分词器、版面、LaTeX 后处理
   commands.rs           IPC 命令
   shell.rs              菜单栏图标、后台运行、全局快捷键

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { setLang, t, translateDom, translationKeys } from "../../src/lib/i18n";
+import { setLang, t, translateDom, translationKeys } from "../../frontend/lib/i18n";
 
 afterEach(() => setLang("zh"));
 
@@ -29,7 +29,7 @@ describe("i18n", () => {
 
   it("every data-i18n key in index.html and t() call in main.ts has an English entry", () => {
     const html = readFileSync("index.html", "utf8");
-    const main = readFileSync("src/main.ts", "utf8");
+    const main = readFileSync("frontend/main.ts", "utf8");
     const used = new Set<string>();
     for (const m of html.matchAll(/data-i18n(?:-placeholder|-title)?="([^"]+)"/g)) used.add(m[1]);
     for (const m of main.matchAll(/\bt\(\s*"([^"]+)"/g)) used.add(m[1]);

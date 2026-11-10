@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { InkModel } from "../../src/lib/ink";
+import { InkModel } from "../../frontend/lib/ink";
 
 describe("InkModel", () => {
   it("records strokes and drops jitter points", () => {

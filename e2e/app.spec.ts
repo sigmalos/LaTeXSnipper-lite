@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const FIXTURE = path.join(here, "../src-tauri/tests/fixtures/frac.png");
+const FIXTURE = path.join(here, "../backend/tests/fixtures/frac.png");
 
 type Seed = Record<string, unknown>;
 

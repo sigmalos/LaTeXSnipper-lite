@@ -15,7 +15,7 @@ import {
   wrapLatex,
   escapeHtml,
   type Entry,
-} from "../../src/lib/format";
+} from "../../frontend/lib/format";
 
 const key = (code: string, mods: Partial<Record<"metaKey" | "ctrlKey" | "altKey" | "shiftKey", boolean>> = {}) => ({
   metaKey: false,

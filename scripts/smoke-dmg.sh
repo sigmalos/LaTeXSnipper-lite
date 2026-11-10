@@ -2,8 +2,8 @@
 # Packaged-artifact E2E: mount the DMG, check linkage, run headless OCR, launch the GUI.
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-DMG=$(ls "$ROOT"/src-tauri/target/release/bundle/dmg/LaTeXSnipper_*.dmg | head -1)
-FIX="$ROOT/src-tauri/tests/fixtures"
+DMG=$(ls "$ROOT"/backend/target/release/bundle/dmg/LaTeXSnipper_*.dmg | head -1)
+FIX="$ROOT/backend/tests/fixtures"
 MNT=$(mktemp -d)
 hdiutil attach -nobrowse -readonly -mountpoint "$MNT" "$DMG" >/dev/null
 trap 'hdiutil detach "$MNT" >/dev/null 2>&1 || true' EXIT
