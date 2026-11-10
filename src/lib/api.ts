@@ -58,11 +58,14 @@ export const api = {
   exportFile: (path: string, content: string, format: string) => invoke<void>("export_file", { path, content, format }),
   history: (op: ListOp) => invoke<Entry[]>("history_op", op),
   favorites: (op: ListOp) => invoke<Entry[]>("favorite_op", op),
+  suspendHotkey: () => invoke<void>("suspend_hotkey"),
+  resumeHotkey: () => invoke<void>("resume_hotkey"),
   copy: (text: string) => writeText(text),
   saveDialog: (defaultPath: string, ext: string, label: string) =>
     save({ defaultPath, filters: [{ name: label, extensions: [ext] }] }),
   onProgress: (cb: (p: Progress) => void): Promise<UnlistenFn> => listen<Progress>("model-progress", (e) => cb(e.payload)),
   onHotkey: (cb: () => void): Promise<UnlistenFn> => listen("hotkey-capture", () => cb()),
+  onOpenSettings: (cb: () => void): Promise<UnlistenFn> => listen("open-settings", () => cb()),
   onDrop: async (cb: (paths: string[]) => void, hover: (on: boolean) => void): Promise<void> => {
     const { getCurrentWebview } = await import("@tauri-apps/api/webview");
     await getCurrentWebview().onDragDropEvent((e) => {

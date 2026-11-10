@@ -10,7 +10,8 @@
 
 ## 功能
 
-- **截图识别**：调用系统 `screencapture` 框选区域，全局快捷键默认 `⌥⌘F`（可改）
+- **截图识别**：调用系统 `screencapture` 框选区域，全局快捷键默认 `⌘F`（可在“快捷键”中修改）
+- **后台运行与菜单栏**：关闭窗口后应用继续在后台运行，菜单栏图标提供截图识别、打开主窗口、设置与退出；点击 Dock 图标重新打开窗口，`⌘Q` 完全退出
 - **图片识别**：选择文件、拖入窗口，或在窗口内 `⌘V` 粘贴截图
 - **PDF 识别**：pdf.js 逐页渲染（可选页码和 DPI），按混合模式识别并合并成 Markdown
 - **手写识别**：画布书写，停笔后自动识别，支持橡皮和撤销
@@ -54,6 +55,7 @@ src/                    前端（TypeScript，无框架）
 src-tauri/src/
   ocr/                  MathCraft OCR 的 Rust 移植：模型、分词器、版面、LaTeX 后处理
   commands.rs           IPC 命令
+  shell.rs              菜单栏图标、后台运行、全局快捷键
   store.rs              设置、历史、收藏（兼容原版格式）
   modelhub.rs           模型下载与校验
   external.rs           OpenAI 兼容接口
@@ -61,7 +63,7 @@ src-tauri/src/
 
 ## 相比原版移除的部分
 
-Windows / Linux 平台代码与安装器、Office 插件（仅支持 Windows）、自动化 HTTP API、应用内更新器、托盘、MinerU 客户端，以及 Python 运行时与打包脚本。
+Windows / Linux 平台代码与安装器、Office 插件（仅支持 Windows）、自动化 HTTP API、应用内更新器、MinerU 客户端，以及 Python 运行时与打包脚本。
 
 ## 许可
 

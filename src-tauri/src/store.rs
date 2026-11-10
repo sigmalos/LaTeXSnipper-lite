@@ -29,9 +29,29 @@ pub struct Settings {
     pub external_timeout_sec: u64,
     pub external_custom_prompt: String,
     pub onboarding_done: bool,
+    /// Schema version. A missing field must read as 0 (not the struct
+    /// default) so files written before migrations existed get upgraded.
+    #[serde(default)]
+    pub version: u32,
 }
 
-pub const DEFAULT_HOTKEY: &str = "CommandOrControl+Alt+F";
+/// ⌘F, matching the original app's macOS default.
+pub const DEFAULT_HOTKEY: &str = "CommandOrControl+F";
+/// Default shipped by 4.0.0; never chosen by the user, so it is migrated.
+const LEGACY_DEFAULT_HOTKEY: &str = "CommandOrControl+Alt+F";
+pub const SETTINGS_VERSION: u32 = 1;
+
+/// Upgrade settings read from disk. Returns whether anything changed.
+pub fn migrate(s: &mut Settings) -> bool {
+    if s.version >= SETTINGS_VERSION {
+        return false;
+    }
+    if s.hotkey == LEGACY_DEFAULT_HOTKEY {
+        s.hotkey = DEFAULT_HOTKEY.into();
+    }
+    s.version = SETTINGS_VERSION;
+    true
+}
 
 impl Default for Settings {
     fn default() -> Self {
@@ -49,6 +69,7 @@ impl Default for Settings {
             external_timeout_sec: 60,
             external_custom_prompt: String::new(),
             onboarding_done: false,
+            version: SETTINGS_VERSION,
         }
     }
 }
@@ -180,10 +201,16 @@ fn dump_entries(entries: &[Entry], list_key: &str, names_key: &str, types_key: &
 
 impl Store {
     pub fn open(dir: &Path) -> Self {
-        let settings = read_json(&dir.join("settings.json"))
+        let mut settings = read_json(&dir.join("settings.json"))
             .and_then(|v| serde_json::from_value::<Settings>(v).ok())
             .filter(|s| s.validate().is_ok())
             .unwrap_or_default();
+        if migrate(&mut settings) {
+            // Best effort: the in-memory value is already correct for this run.
+            let _ = serde_json::to_string_pretty(&settings)
+                .map_err(anyhow::Error::from)
+                .and_then(|json| write_atomic(&dir.join("settings.json"), &json, true));
+        }
         Self {
             dir: dir.to_path_buf(),
             settings,
@@ -409,6 +436,52 @@ mod tests {
             0o600
         );
         assert_eq!(Store::open(dir.path()).settings, good);
+    }
+
+    #[test]
+    fn default_hotkey_is_command_f() {
+        assert_eq!(Settings::default().hotkey, "CommandOrControl+F");
+    }
+
+    #[test]
+    fn migrates_the_4_0_0_default_hotkey_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("settings.json");
+        std::fs::write(
+            &path,
+            r#"{"hotkey":"CommandOrControl+Alt+F","onboarding_done":true}"#,
+        )
+        .unwrap();
+        let s = Store::open(dir.path());
+        assert_eq!(s.settings.hotkey, DEFAULT_HOTKEY);
+        assert!(s.settings.onboarding_done);
+        let raw: Value = read_json(&path).unwrap();
+        assert_eq!(raw["hotkey"], DEFAULT_HOTKEY);
+        assert_eq!(raw["version"], SETTINGS_VERSION);
+
+        // A user who deliberately picks ⌥⌘F afterwards keeps it.
+        let mut store = Store::open(dir.path());
+        let chosen = Settings {
+            hotkey: LEGACY_DEFAULT_HOTKEY.into(),
+            ..store.settings.clone()
+        };
+        store.save_settings(chosen).unwrap();
+        assert_eq!(
+            Store::open(dir.path()).settings.hotkey,
+            LEGACY_DEFAULT_HOTKEY
+        );
+    }
+
+    #[test]
+    fn migration_keeps_custom_hotkeys() {
+        let mut s = Settings {
+            hotkey: "Control+Shift+K".into(),
+            version: 0,
+            ..Settings::default()
+        };
+        assert!(migrate(&mut s));
+        assert_eq!(s.hotkey, "Control+Shift+K");
+        assert!(!migrate(&mut s));
     }
 
     #[test]

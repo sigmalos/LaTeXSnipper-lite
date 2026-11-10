@@ -24,8 +24,8 @@ test.describe("main window", () => {
       await expect(page.getByText(label, { exact: true }).first()).toBeVisible();
     }
     await expect(page.locator("#status")).toContainText("当前模型: MathCraft 公式 | 状态: 就绪");
-    await expect(page.locator("#capture-kbd")).toHaveText("⌥⌘F");
-    await expect(page.locator("#history .empty")).toContainText("⌥⌘F");
+    await expect(page.locator("#capture-kbd")).toHaveText("⌘F");
+    await expect(page.locator("#history .empty")).toContainText("⌘F");
   });
 
   test("live preview renders LaTeX and reports TeX errors", async ({ page }) => {
@@ -279,13 +279,65 @@ test.describe("settings", () => {
     await expect(page.locator("#capture-kbd")).toHaveText("⌃⇧K");
   });
 
+  test("recorder still hears keys after clicking inside the dialog (WebKit focus regression)", async ({ page }) => {
+    await open(page);
+    await page.click("#hotkey-btn");
+    await page.click("#hotkey-capture"); // WebKit does not focus a clicked <button>
+    await page.keyboard.press("Control+Shift+KeyK");
+    await expect(page.locator("#hotkey-capture")).toHaveText("⌃⇧K");
+    await page.click("#hotkey-dialog h3");
+    await page.keyboard.press("Meta+Alt+KeyJ");
+    await expect(page.locator("#hotkey-capture")).toHaveText("⌥⌘J");
+    await page.click("#hotkey-reset");
+    await expect(page.locator("#hotkey-capture")).toHaveText("⌘F");
+  });
+
+  test("can record ⌘F itself and the global hotkey is paused while recording", async ({ page }) => {
+    await open(page, { settings: { hotkey: "Control+Shift+K" } });
+    await page.click("#hotkey-btn");
+    await expect.poll(() => mock<boolean>(page, "hotkeySuspended")).toBe(true);
+    await page.keyboard.press("Meta+KeyF");
+    await expect(page.locator("#hotkey-capture")).toHaveText("⌘F");
+    await page.click("#hotkey-save");
+    await expect.poll(() => mock<string>(page, "settings.hotkey")).toBe("CommandOrControl+F");
+    await expect.poll(() => mock<boolean>(page, "hotkeySuspended")).toBe(false);
+  });
+
+  test("cancelling the recorder restores the global hotkey", async ({ page }) => {
+    await open(page);
+    await page.click("#hotkey-btn");
+    await expect.poll(() => mock<boolean>(page, "hotkeySuspended")).toBe(true);
+    await page.keyboard.press("Meta+Alt+KeyL");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#hotkey-dialog")).toBeHidden();
+    await expect.poll(() => mock<boolean>(page, "hotkeySuspended")).toBe(false);
+    expect(await mock<string>(page, "settings.hotkey")).toBe("CommandOrControl+F");
+  });
+
+  test("buttons in the recorder still work from the keyboard", async ({ page }) => {
+    await open(page);
+    await page.click("#hotkey-btn");
+    await page.keyboard.press("Meta+Shift+KeyM");
+    await page.focus("#hotkey-save");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => mock<string>(page, "settings.hotkey")).toBe("CommandOrControl+Shift+M");
+  });
+
+  test("menu bar “Settings…” opens the settings sheet", async ({ page }) => {
+    await open(page);
+    await page.click("#favorites-btn");
+    await page.evaluate(() => (window as any).__mock.emit("open-settings", null));
+    await expect(page.locator("#settings-dialog")).toBeVisible();
+    await expect(page.locator("#favorites-dialog")).toBeHidden();
+  });
+
   test("a hotkey the system refuses is reported", async ({ page }) => {
     await open(page);
     await page.click("#hotkey-btn");
     await page.keyboard.press("Meta+Alt+KeyQ");
     await page.click("#hotkey-save");
     await expect(page.locator(".toast.error")).toContainText("快捷键不可用");
-    await expect.poll(() => mock<string>(page, "settings.hotkey")).toBe("CommandOrControl+Alt+F");
+    await expect.poll(() => mock<string>(page, "settings.hotkey")).toBe("CommandOrControl+F");
   });
 });
 

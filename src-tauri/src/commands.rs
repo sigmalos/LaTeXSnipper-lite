@@ -228,12 +228,13 @@ pub fn save_settings(
     let previous = core.settings();
     core.store().save_settings(settings.clone()).map_err(err)?;
     if previous.hotkey != settings.hotkey {
-        if let Err(e) = crate::register_hotkey(&app, &settings.hotkey) {
-            let _ = crate::register_hotkey(&app, &previous.hotkey);
+        if let Err(e) = crate::shell::register_hotkey(&app, &settings.hotkey) {
+            let _ = crate::shell::register_hotkey(&app, &previous.hotkey);
             core.store().save_settings(previous).map_err(err)?;
             return Err(format!("HOTKEY_INVALID:{e}"));
         }
     }
+    crate::shell::refresh_tray(&app, &settings);
     Ok(settings)
 }
 
@@ -276,17 +277,22 @@ pub async fn capture(
     core: State<'_, Arc<Core>>,
     mode: Option<Mode>,
 ) -> Res<Option<RecognizeResult>> {
-    let window = app.get_webview_window("main");
-    if let Some(w) = &window {
-        let _ = w.hide();
+    let window = app.get_webview_window(crate::shell::MAIN);
+    let was_visible = window
+        .as_ref()
+        .is_some_and(|w| w.is_visible().unwrap_or(false));
+    if was_visible {
+        let _ = window.as_ref().map(|w| w.hide());
+        // Let the window finish ordering out so it is not in the screenshot.
+        std::thread::sleep(std::time::Duration::from_millis(180));
     }
-    std::thread::sleep(std::time::Duration::from_millis(180));
     let shot = tauri::async_runtime::spawn_blocking(screencapture)
         .await
         .map_err(|e| e.to_string())?;
-    if let Some(w) = &window {
-        let _ = w.show();
-        let _ = w.set_focus();
+    let got_image = matches!(shot, Ok(Some(_)));
+    // Show the window for the result dialog; a cancelled background capture stays hidden.
+    if was_visible || got_image {
+        crate::shell::show_main(&app);
     }
     let Some(bytes) = shot.map_err(err)? else {
         return Ok(None);
@@ -366,6 +372,16 @@ pub fn favorite_op(
     }
     .map_err(err)?;
     Ok(s.favorites.clone())
+}
+
+#[tauri::command]
+pub fn suspend_hotkey(app: AppHandle) -> Res<()> {
+    crate::shell::suspend_hotkey(&app).map_err(err)
+}
+
+#[tauri::command]
+pub fn resume_hotkey(app: AppHandle, core: State<'_, Arc<Core>>) -> Res<()> {
+    crate::shell::register_hotkey(&app, &core.settings().hotkey).map_err(err)
 }
 
 #[cfg(test)]

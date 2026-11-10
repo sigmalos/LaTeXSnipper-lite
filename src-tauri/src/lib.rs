@@ -2,13 +2,14 @@ pub mod commands;
 pub mod external;
 pub mod modelhub;
 pub mod ocr;
+pub mod shell;
 pub mod store;
 
 use commands::Core;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
-use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
+use tauri::{Emitter, RunEvent, WindowEvent};
+use tauri_plugin_global_shortcut::ShortcutState;
 
 /// Shared with the legacy Qt app so history, favorites and models carry over.
 pub fn data_dir() -> PathBuf {
@@ -17,14 +18,6 @@ pub fn data_dir() -> PathBuf {
     }
     let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
     PathBuf::from(home).join("Library/Application Support/LaTeXSnipper")
-}
-
-pub fn register_hotkey(app: &AppHandle, accelerator: &str) -> anyhow::Result<()> {
-    let shortcut: Shortcut = accelerator.parse().map_err(|e| anyhow::anyhow!("{e}"))?;
-    let gs = app.global_shortcut();
-    gs.unregister_all()?;
-    gs.register(shortcut)?;
-    Ok(())
 }
 
 pub fn run() {
@@ -42,10 +35,20 @@ pub fn run() {
                 .build(),
         )
         .manage(core.clone())
+        .on_window_event(|window, event| {
+            // Closing the main window (red button, ⌘W) keeps the app running in the menu bar.
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                if window.label() == shell::MAIN {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+            }
+        })
         .setup(move |app| {
-            let hotkey = core.settings().hotkey;
-            if let Err(e) = register_hotkey(app.handle(), &hotkey) {
-                eprintln!("hotkey {hotkey} unavailable: {e}");
+            let settings = core.settings();
+            shell::install_tray(app.handle(), &settings)?;
+            if let Err(e) = shell::register_hotkey(app.handle(), &settings.hotkey) {
+                eprintln!("hotkey {} unavailable: {e}", settings.hotkey);
             }
             // Load the formula model off the UI thread so the first capture is fast.
             let warm = core.clone();
@@ -68,9 +71,21 @@ pub fn run() {
             commands::export_file,
             commands::history_op,
             commands::favorite_op,
+            commands::suspend_hotkey,
+            commands::resume_hotkey,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running LaTeXSnipper");
+        .build(tauri::generate_context!())
+        .expect("error while building LaTeXSnipper")
+        .run(|app, event| {
+            // Clicking the Dock icon (or relaunching the .app) brings the window back.
+            if let RunEvent::Reopen {
+                has_visible_windows: false,
+                ..
+            } = event
+            {
+                shell::show_main(app);
+            }
+        });
 }
 
 /// Recognize one image with the installed models and print the LaTeX.

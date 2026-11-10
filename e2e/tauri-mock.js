@@ -12,7 +12,7 @@
       backend: "builtin",
       theme: "light",
       language: "zh",
-      hotkey: "CommandOrControl+Alt+F",
+      hotkey: "CommandOrControl+F",
       history_reverse: true,
       pdf_dpi: 200,
       external_base_url: "http://localhost:11434/v1",
@@ -27,6 +27,7 @@
     favorites: seed.favorites || [],
     models: seed.models || { formula: true, mixed: true, text: true },
     clipboard: "",
+    hotkeySuspended: false,
     calls: [],
     // queue of scripted outcomes for capture / recognize: {text, score?, flags?} | null | {error}
     outcomes: seed.outcomes || [],
@@ -102,6 +103,12 @@
     },
     export_file: ({ path, content, format }) => {
       state.exported.push({ path, content, format });
+    },
+    suspend_hotkey: () => {
+      state.hotkeySuspended = true;
+    },
+    resume_hotkey: () => {
+      state.hotkeySuspended = false;
     },
     history_op: (a) => listOp(state.history, a, true),
     favorite_op: (a) => listOp(state.favorites, a, false),

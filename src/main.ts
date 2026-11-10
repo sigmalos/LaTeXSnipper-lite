@@ -21,7 +21,7 @@ import { getLang, setLang, t, translateDom } from "./lib/i18n";
 import { InkModel, drawStrokes, inkToPng } from "./lib/ink";
 import { renderInto, toHtmlDocument, toMathML, toSvg } from "./lib/math";
 
-const DEFAULT_HOTKEY = "CommandOrControl+Alt+F";
+const DEFAULT_HOTKEY = "CommandOrControl+F";
 const MODEL_SIZE: Record<Mode, string> = { formula: "112 MB", mixed: "210 MB", text: "21 MB" };
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -502,7 +502,10 @@ function readSettingsForm(): Settings {
   };
 }
 
-$("settings-btn").addEventListener("click", () => {
+function openSettings(): void {
+  const dlg = $<HTMLDialogElement>("settings-dialog");
+  if (dlg.open) return;
+  document.querySelectorAll<HTMLDialogElement>("dialog[open]").forEach((d) => d.close());
   const s = snap.settings;
   form.querySelectorAll<HTMLInputElement>("input[type=radio]").forEach((r) => {
     r.checked = (s as unknown as Record<string, unknown>)[r.name] === r.value;
@@ -514,10 +517,11 @@ $("settings-btn").addEventListener("click", () => {
   $("version").textContent = `LaTeXSnipper ${snap.version}`;
   $("test-result").textContent = "";
   syncExternalVisibility();
-  const dlg = $<HTMLDialogElement>("settings-dialog");
   dlg.returnValue = "";
   dlg.showModal();
-});
+}
+
+$("settings-btn").addEventListener("click", openSettings);
 
 form.addEventListener("change", syncExternalVisibility);
 
@@ -554,46 +558,61 @@ function showDraft(): void {
   keycap.textContent = formatAccelerator(draftHotkey);
 }
 
+const hotkeyDialog = $<HTMLDialogElement>("hotkey-dialog");
+
 $("hotkey-btn").addEventListener("click", () => {
   draftHotkey = snap.settings.hotkey;
   showDraft();
   $("hotkey-hint").textContent = t("按下新的组合键…");
-  const dlg = $<HTMLDialogElement>("hotkey-dialog");
-  dlg.returnValue = "";
-  dlg.showModal();
+  hotkeyDialog.returnValue = "";
+  // While recording, the registered global shortcut must not swallow the keys.
+  api.suspendHotkey().catch(() => undefined);
+  hotkeyDialog.showModal();
   keycap.classList.add("listening");
   keycap.focus();
 });
 
-keycap.addEventListener("keydown", (e) => {
-  if (["Tab", "Escape", "Enter"].includes(e.key)) return;
-  e.preventDefault();
-  if (["Meta", "Control", "Alt", "Shift"].includes(e.key)) return;
-  const acc = acceleratorFromEvent(e);
-  if (!acc) {
-    $("hotkey-hint").textContent = t("组合键需要至少一个修饰键（⌘ ⌥ ⌃ ⇧）");
-    return;
-  }
-  draftHotkey = acc;
-  $("hotkey-hint").textContent = "";
-  showDraft();
-});
+// Listen on the whole dialog: WebKit does not focus a <button> when it is
+// clicked, so a listener on the keycap alone goes deaf after any click.
+hotkeyDialog.addEventListener(
+  "keydown",
+  (e) => {
+    const modified = e.metaKey || e.ctrlKey || e.altKey;
+    if (!modified && ["Tab", "Escape", "Enter", " "].includes(e.key)) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (["Meta", "Control", "Alt", "Shift", "CapsLock", "Fn"].includes(e.key)) return;
+    const acc = acceleratorFromEvent(e);
+    if (!acc) {
+      $("hotkey-hint").textContent = t("组合键需要至少一个修饰键（⌘ ⌥ ⌃ ⇧）");
+      return;
+    }
+    draftHotkey = acc;
+    $("hotkey-hint").textContent = "";
+    showDraft();
+  },
+  true,
+);
+
+keycap.addEventListener("click", () => keycap.classList.add("listening"));
 
 $("hotkey-reset").addEventListener("click", () => {
   draftHotkey = DEFAULT_HOTKEY;
   showDraft();
 });
 
-$<HTMLDialogElement>("hotkey-dialog").addEventListener("close", async () => {
+hotkeyDialog.addEventListener("close", async () => {
   keycap.classList.remove("listening");
-  if ($<HTMLDialogElement>("hotkey-dialog").returnValue !== "save" || draftHotkey === snap.settings.hotkey) return;
   try {
+    if (hotkeyDialog.returnValue !== "save" || draftHotkey === snap.settings.hotkey) return;
     snap.settings = await api.saveSettings({ ...snap.settings, hotkey: draftHotkey });
     $("capture-kbd").textContent = formatAccelerator(draftHotkey);
     renderHistory();
     toast(t("快捷键已更新为 {hotkey}", { hotkey: formatAccelerator(draftHotkey) }));
   } catch (e) {
     toast(t("快捷键不可用：{error}", { error: errorCode(e).detail }), true);
+  } finally {
+    await api.resumeHotkey().catch(() => undefined);
   }
 });
 
@@ -860,6 +879,7 @@ async function boot(): Promise<void> {
   const last = snap.history[snap.history.length - 1];
   if (last) loadIntoEditor(last.text, last.kind);
   await api.onHotkey(capture);
+  await api.onOpenSettings(openSettings);
   await api
     .onDrop(
       (paths) => {
