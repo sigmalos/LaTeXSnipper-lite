@@ -1,0 +1,22 @@
+{
+ "frac": {
+  "mode": "formula",
+  "text": "\\frac { a + b } { c ^ { 2 } } = \\sqrt { \\, \\chi }"
+ },
+ "sum": {
+  "mode": "formula",
+  "text": "\\sum _ { n = 0 } ^ { \\infty } \\frac { x ^ { n } } { n! } = \\mathbf { e } ^ { x }"
+ },
+ "multiline": {
+  "mode": "formula",
+  "text": "\\begin{aligned}\nf ( x ) &= x ^ { 2 } + 2 x + 1 \\\\\n&= ( x + 1 ) ^ { 2 }\n\\end{aligned}"
+ },
+ "text": {
+  "mode": "text",
+  "text": "The quick brown fox jumps\nover the lazy dog 2024."
+ },
+ "mixed": {
+  "mode": "mixed",
+  "text": "Let $\\alpha + \\beta = \\gamma$ be given, then\nwe have $x ^ { 2 } \\geq 0$ for all real numbers."
+ }
+}

@@ -1,0 +1,68 @@
+# LaTeXSnipper（macOS · Tauri）
+
+把屏幕截图、图片、PDF 和手写转成可编辑的 LaTeX。这是原 PyQt 版 LaTeXSnipper 的 macOS 专版重写：Rust + Tauri 2 + 原生 WKWebView，不再依赖 Python、Qt 或 Chromium。
+
+| | 原版（PyQt6 + WebEngine） | 本版（Tauri） |
+|---|---|---|
+| 安装包 | 内置 Python、Qt、Chromium、模型 | DMG 12 MB（.app 23 MB） |
+| OCR | Python + onnxruntime + OpenCV + RapidOCR | Rust 原生移植，ONNX Runtime 静态链接 |
+| 平台 | Windows / Linux / macOS | 仅 macOS 13+（Apple Silicon） |
+
+## 功能
+
+- **截图识别**：调用系统 `screencapture` 框选区域，全局快捷键默认 `⌥⌘F`（可改）
+- **图片识别**：选择文件、拖入窗口，或在窗口内 `⌘V` 粘贴截图
+- **PDF 识别**：pdf.js 逐页渲染（可选页码和 DPI），按混合模式识别并合并成 Markdown
+- **手写识别**：画布书写，停笔后自动识别，支持橡皮和撤销
+- **三种识别类型**：公式 / 混合（文字 + `$…$`）/ 纯文字，与原版 MathCraft 输出逐字一致
+- **外部模型**：可选任何 OpenAI 兼容视觉接口（OpenAI、Ollama `/v1`、LM Studio、vLLM 等）
+- **编辑与预览**：MathJax 3 实时渲染；导出 TeX / Markdown / HTML / MathML / SVG / TXT；装有 Pandoc 时可导出 Word / ODT
+- **历史与收藏**：重命名、收藏、删除、排序；数据目录与原版共用（`~/Library/Application Support/LaTeXSnipper`），原有 `history.json`、`favorites.json` 和已下载的模型直接沿用
+
+## 模型
+
+模型约 210 MB，不打进 DMG。首次使用某种识别类型时，应用会从 [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) 下载对应模型，并逐文件做 SHA-256 校验。只用公式识别时需要 112 MB。已经装过原版的机器无需下载。
+
+## 开发
+
+```sh
+npm install
+npm run tauri dev           # 开发模式
+npm run dmg                 # 生成 src-tauri/target/release/bundle/dmg/*.dmg
+```
+
+需要 Rust（版本由 `rust-toolchain.toml` 固定）和 Node 20+。
+
+## 测试
+
+```sh
+npm run test:rust           # Rust 单元测试 + 真实模型对拍（无模型时自动跳过）
+npm test                    # 前端单元测试（Vitest）
+npm run test:e2e            # 界面 E2E（Playwright · WebKit，IPC 由 e2e/tauri-mock.js 模拟）
+./scripts/smoke-dmg.sh      # 安装包 E2E：挂载 DMG、检查链接、无界面识别、启动 GUI
+```
+
+- `src-tauri/tests/ocr_parity.rs` 用真实模型跑 `tests/fixtures/*.png`，结果必须与原 Python MathCraft 的输出（`python_reference.json`）完全一致
+- Tauri 的 WebDriver 不支持 macOS，所以界面 E2E 在同引擎的 WebKit 上运行，后端由模拟层替代；真实后端由 Rust 集成测试和 `smoke-dmg.sh` 覆盖
+
+## 结构
+
+```
+src/                    前端（TypeScript，无框架）
+  main.ts               界面逻辑
+  lib/                  format / i18n / math(MathJax) / ink / pdf / api
+src-tauri/src/
+  ocr/                  MathCraft OCR 的 Rust 移植：模型、分词器、版面、LaTeX 后处理
+  commands.rs           IPC 命令
+  store.rs              设置、历史、收藏（兼容原版格式）
+  modelhub.rs           模型下载与校验
+  external.rs           OpenAI 兼容接口
+```
+
+## 相比原版移除的部分
+
+Windows / Linux 平台代码与安装器、Office 插件（仅支持 Windows）、自动化 HTTP API、应用内更新器、托盘、MinerU 客户端，以及 Python 运行时与打包脚本。
+
+## 许可
+
+GPL-3.0-only，见 `LICENSE`。
