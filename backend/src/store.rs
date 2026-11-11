@@ -37,7 +37,7 @@ pub struct Settings {
 
 /// ⌘F, matching the original app's macOS default.
 pub const DEFAULT_HOTKEY: &str = "CommandOrControl+F";
-/// Default shipped by 4.0.0; never chosen by the user, so it is migrated.
+/// Default of pre-release builds; never chosen by the user, so it is migrated.
 const LEGACY_DEFAULT_HOTKEY: &str = "CommandOrControl+Alt+F";
 pub const SETTINGS_VERSION: u32 = 1;
 
@@ -444,7 +444,7 @@ mod tests {
     }
 
     #[test]
-    fn migrates_the_4_0_0_default_hotkey_once() {
+    fn migrates_the_pre_release_default_hotkey_once() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("settings.json");
         std::fs::write(

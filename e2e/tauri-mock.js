@@ -126,7 +126,7 @@
 
   const handlers = {
     bootstrap: () => ({
-      version: "4.0.0",
+      version: "1.0.0",
       settings: structuredClone(state.settings),
       history: structuredClone(state.history),
       favorites: structuredClone(state.favorites),
