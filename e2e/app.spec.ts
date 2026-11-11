@@ -331,7 +331,7 @@ test.describe("settings", () => {
     await expect(rows.locator(".model-use")).toHaveText(["用于：混合", "用于：公式、混合", "用于：混合、纯文字", "用于：混合、纯文字"]);
     await expect(rows.locator(".model-size")).toHaveText(["64 MB", "104 MB", "4.3 MB", "13 MB"]);
     await expect(rows.locator(".model-state")).toHaveText(["未下载", "已下载", "未下载", "未下载"]);
-    await expect(rows.locator("button")).toHaveText(["下载", "重新下载", "下载", "下载"]);
+    await expect(rows.locator(".model-download")).toHaveText(["下载", "重新下载", "下载", "下载"]);
   });
 
   test("the model list follows the selected backend before saving", async ({ page }) => {
@@ -359,17 +359,17 @@ test.describe("settings", () => {
     await page.click("#settings-btn");
     const row = (id: string) => page.locator(`.model-row[data-model="${id}"]`);
 
-    await row("mathcraft-text-det").locator("button").click();
+    await row("mathcraft-text-det").locator(".model-download").click();
     await expect(row("mathcraft-text-det")).toHaveClass(/is-downloading/);
-    await expect(row("mathcraft-text-det").locator("button")).toBeDisabled();
+    await expect(row("mathcraft-text-det").locator(".model-download")).toBeDisabled();
     await expect(row("mathcraft-text-det").locator(".model-state")).toHaveText(/下载中 \d+%/);
     await expect(row("mathcraft-text-det").locator(".model-state")).toHaveText("已下载");
-    await expect(row("mathcraft-text-det").locator("button")).toHaveText("重新下载");
+    await expect(row("mathcraft-text-det").locator(".model-download")).toHaveText("重新下载");
     await expect(page.locator("#models-count")).toHaveText("已下载 2/4");
     await expect(page.locator(".toast").last()).toContainText("文字检测 已下载");
     await expect(page.locator("#status")).toContainText("需下载模型");
 
-    await row("mathcraft-text-rec").locator("button").click();
+    await row("mathcraft-text-rec").locator(".model-download").click();
     await expect(row("mathcraft-text-rec").locator(".model-state")).toHaveText("已下载");
     await expect(page.locator("#status")).toContainText("状态: 就绪"); // text mode is now complete
 
@@ -384,12 +384,12 @@ test.describe("settings", () => {
     await open(page, { models: { formula: false, mixed: false, text: false }, failDownloads: ["mathcraft-formula-det"] });
     await page.click("#settings-btn");
     const row = page.locator('.model-row[data-model="mathcraft-formula-det"]');
-    await row.locator("button").click();
+    await row.locator(".model-download").click();
     await expect(row.locator(".model-state")).toHaveText("下载失败");
     await expect(row).toHaveClass(/is-failed/);
     await expect(page.locator(".toast.error")).toContainText("下载失败：network unreachable");
-    await expect(row.locator("button")).toBeEnabled();
-    await row.locator("button").click();
+    await expect(row.locator(".model-download")).toBeEnabled();
+    await row.locator(".model-download").click();
     await expect(row.locator(".model-state")).toHaveText("已下载");
   });
 
@@ -397,12 +397,12 @@ test.describe("settings", () => {
     await open(page, { models: { formula: false, mixed: false, text: false }, downloadDelay: 250 });
     await page.click("#settings-btn");
     const row = () => page.locator('.model-row[data-model="mathcraft-formula-rec"]');
-    await row().locator("button").click();
+    await row().locator(".model-download").click();
     await expect(row()).toHaveClass(/is-downloading/);
     await page.locator("#settings-form").getByText("取消", { exact: true }).click();
     await page.click("#settings-btn");
     await expect(row()).toHaveClass(/is-downloading/);
-    await expect(row().locator("button")).toBeDisabled();
+    await expect(row().locator(".model-download")).toBeDisabled();
     await expect(row().locator(".model-state")).toHaveText("已下载", { timeout: 5000 });
     await expect(page.locator("#status")).toContainText("状态: 就绪");
   });
@@ -417,6 +417,93 @@ test.describe("settings", () => {
     await expect(page.locator("#models-count")).toHaveText("已下载 1/4");
   });
 
+  test("downloaded models get a red delete button on the right", async ({ page }) => {
+    await open(page, { models: { formula: true, mixed: false, text: false } });
+    await page.click("#settings-btn");
+    const rows = page.locator("#builtin-fields .model-row");
+    await expect(rows.locator(".model-delete:visible")).toHaveCount(1);
+    const del = page.locator('.model-row[data-model="mathcraft-formula-rec"] .model-delete');
+    await expect(del).toBeVisible();
+    await expect(del).toHaveText("删除");
+    // Rightmost control in the row, after 重新下载.
+    const [dl, rm] = await Promise.all([
+      page.locator('.model-row[data-model="mathcraft-formula-rec"] .model-download').boundingBox(),
+      del.boundingBox(),
+    ]);
+    expect(rm!.x).toBeGreaterThan(dl!.x + dl!.width - 1);
+    // Red: the theme's danger color, in light and dark.
+    const danger = () =>
+      page.evaluate(() => {
+        const probe = document.createElement("span");
+        probe.style.color = "var(--danger)";
+        document.body.append(probe);
+        const c = getComputedStyle(probe).color;
+        probe.remove();
+        return c;
+      });
+    await expect.poll(async () => (await del.evaluate((el) => getComputedStyle(el).color)) === (await danger())).toBe(true);
+    expect(await del.evaluate((el) => getComputedStyle(el).color)).toBe("rgb(180, 35, 24)");
+    await page.locator("#settings-form .field").getByText("深色", { exact: true }).click();
+    await expect.poll(async () => del.evaluate((el) => getComputedStyle(el).color)).toBe("rgb(255, 138, 128)");
+    // Not-downloaded models have no delete button.
+    await expect(page.locator('.model-row[data-model="mathcraft-text-det"] .model-delete')).toBeHidden();
+  });
+
+  test("deleting a model asks first, then marks it not downloaded", async ({ page }) => {
+    await open(page); // all four installed, formula mode ready
+    await page.click("#settings-btn");
+    const row = page.locator('.model-row[data-model="mathcraft-formula-rec"]');
+    await row.locator(".model-delete").click();
+    await expect(page.locator("#ask-text")).toHaveText(
+      "删除“公式识别”模型？公式、混合识别将无法使用，需要时可重新下载（104 MB）。",
+    );
+    await expect(page.locator("#ask-ok")).toHaveText("删除");
+    await expect(page.locator("#ask-ok")).toHaveClass(/destructive/);
+
+    await page.locator("#ask-dialog").getByText("取消", { exact: true }).click();
+    await expect(row.locator(".model-state")).toHaveText("已下载");
+    expect((await mock<{ cmd: string }[]>(page, "calls")).some((c) => c.cmd === "delete_model")).toBe(false);
+
+    await row.locator(".model-delete").click();
+    await page.click("#ask-ok");
+    await expect(row.locator(".model-state")).toHaveText("未下载");
+    await expect(row.locator(".model-delete")).toBeHidden();
+    await expect(row.locator(".model-download")).toHaveText("下载");
+    await expect(page.locator("#models-count")).toHaveText("已下载 3/4");
+    await expect(page.locator(".toast").last()).toContainText("公式识别 已删除");
+    await expect(page.locator("#settings-dialog")).toBeVisible(); // still in Settings
+    await expect(page.locator("#status")).toContainText("需下载模型"); // formula mode lost its model
+    const calls = await mock<{ cmd: string; args: { model: string } }[]>(page, "calls");
+    expect(calls.filter((c) => c.cmd === "delete_model").map((c) => c.args.model)).toEqual(["mathcraft-formula-rec"]);
+
+    // Download it again from the same row.
+    await row.locator(".model-download").click();
+    await expect(row.locator(".model-state")).toHaveText("已下载");
+    await expect(row.locator(".model-delete")).toBeVisible();
+  });
+
+  test("delete is unavailable while that model re-downloads", async ({ page }) => {
+    await open(page, { downloadDelay: 300 });
+    await page.click("#settings-btn");
+    const row = page.locator('.model-row[data-model="mathcraft-text-rec"]');
+    await row.locator(".model-download").click(); // 重新下载
+    await expect(row).toHaveClass(/is-downloading/);
+    await expect(row.locator(".model-delete")).toBeDisabled();
+    await expect(row.locator(".model-state")).toHaveText("已下载", { timeout: 5000 });
+    await expect(row.locator(".model-delete")).toBeEnabled();
+  });
+
+  test("a failed delete is reported and keeps the model", async ({ page }) => {
+    await open(page, { deleteFails: true });
+    await page.click("#settings-btn");
+    const row = page.locator('.model-row[data-model="mathcraft-text-det"]');
+    await row.locator(".model-delete").click();
+    await page.click("#ask-ok");
+    await expect(page.locator(".toast.error")).toContainText("删除失败：Operation not permitted");
+    await expect(row.locator(".model-state")).toHaveText("已下载");
+    await expect(row.locator(".model-delete")).toBeEnabled();
+  });
+
   test("model rows are translated", async ({ page }) => {
     await open(page, { settings: { language: "en" }, models: { formula: true, mixed: false, text: false } });
     await page.click("#settings-btn");
@@ -424,7 +511,8 @@ test.describe("settings", () => {
     const det = page.locator('.model-row[data-model="mathcraft-text-det"]');
     await expect(det.locator(".model-name")).toHaveText("Text detection");
     await expect(det.locator(".model-use")).toHaveText("Used by: Mixed, Text");
-    await expect(det.locator("button")).toHaveText("Download");
+    await expect(det.locator(".model-download")).toHaveText("Download");
+    await expect(page.locator('.model-row[data-model="mathcraft-formula-rec"] .model-delete')).toHaveText("Delete");
   });
 
   test("external model fields appear and connection can be tested", async ({ page }) => {

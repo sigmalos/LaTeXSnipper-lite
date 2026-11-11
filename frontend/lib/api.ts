@@ -30,6 +30,7 @@ export interface Snapshot {
   models: Record<Mode, boolean>;
   model_files: ModelInfo[];
   pandoc: boolean;
+  selfcheck: boolean;
   data_dir: string;
 }
 
@@ -71,6 +72,8 @@ export const api = {
   downloadModels: (mode: Mode) => invoke<ModelsState>("download_models", { mode }),
   listModels: () => invoke<ModelsState>("list_models"),
   downloadModel: (model: string) => invoke<ModelsState>("download_model", { model }),
+  deleteModel: (model: string) => invoke<ModelsState>("delete_model", { model }),
+  frontendReady: (ok: boolean, detail: string) => invoke<void>("frontend_ready", { ok, detail }),
   testExternal: (settings: Settings) => invoke<string>("test_external", { settings }),
   exportFile: (path: string, content: string, format: string) => invoke<void>("export_file", { path, content, format }),
   history: (op: ListOp) => invoke<Entry[]>("history_op", op),

@@ -92,11 +92,12 @@ function applyLanguage(): void {
 
 // ------------------------------------------------------------------ ask dialog
 
-function ask(text: string, okLabel: string, value?: string): Promise<string | null> {
+function ask(text: string, okLabel: string, value?: string, destructive = false): Promise<string | null> {
   const dlg = $<HTMLDialogElement>("ask-dialog");
   const input = $<HTMLInputElement>("ask-input");
   $("ask-text").textContent = text;
   $("ask-ok").textContent = okLabel;
+  $("ask-ok").classList.toggle("destructive", destructive);
   input.hidden = value === undefined;
   input.value = value ?? "";
   dlg.returnValue = "";
@@ -502,14 +503,14 @@ const MODEL_NAMES: [string, string][] = [
 ];
 const modelName = (id: string) => t(MODEL_NAMES.find(([key]) => key === id)?.[1] ?? id);
 
-type RowState = { downloading: boolean; done: number; total: number; failed: string | null };
+type RowState = { downloading: boolean; deleting: boolean; done: number; total: number; failed: string | null };
 const rowStates = new Map<string, RowState>();
 /** Single-model downloads this window started and is still awaiting. */
 const pendingDownloads = new Set<string>();
 
 function rowState(m: ModelInfo): RowState {
   let s = rowStates.get(m.id);
-  if (!s) rowStates.set(m.id, (s = { downloading: m.downloading, done: 0, total: m.download_bytes, failed: null }));
+  if (!s) rowStates.set(m.id, (s = { downloading: m.downloading, deleting: false, done: 0, total: m.download_bytes, failed: null }));
   return s;
 }
 
@@ -538,10 +539,15 @@ function renderModelRow(li: HTMLLIElement, m: ModelInfo): void {
   li.className = `model-row ${s.downloading ? "is-downloading" : s.failed ? "is-failed" : m.installed ? "is-installed" : "is-missing"}`;
   li.querySelector(".model-state")!.textContent = stateText;
   li.querySelector<HTMLElement>(".model-state")!.title = s.failed ?? "";
-  const btn = li.querySelector<HTMLButtonElement>("button")!;
+  const btn = li.querySelector<HTMLButtonElement>(".model-download")!;
   btn.textContent = t(m.installed ? "重新下载" : "下载");
-  btn.className = m.installed ? "btn quiet small" : "btn small";
-  btn.disabled = s.downloading;
+  btn.className = `model-download ${m.installed ? "btn quiet small" : "btn small"}`;
+  btn.disabled = s.downloading || s.deleting;
+  // Delete only exists for a model that is on disk.
+  const del = li.querySelector<HTMLButtonElement>(".model-delete")!;
+  del.textContent = t("删除");
+  del.hidden = !m.installed;
+  del.disabled = s.downloading || s.deleting;
   const bar = li.querySelector<HTMLProgressElement>("progress")!;
   bar.hidden = !s.downloading;
   if (pct === null) bar.removeAttribute("value");
@@ -563,11 +569,13 @@ function renderModelList(): void {
       const uses = m.used_by.map(modeLabel).join(getLang() === "zh" ? "、" : ", ");
       li.innerHTML = `<div><span class="model-name"></span><span class="model-use"></span></div>
         <span class="model-size"></span><span class="model-state" aria-live="polite"></span>
-        <button type="button"></button><progress max="100"></progress>`;
+        <div class="model-actions"><button type="button" class="model-download"></button><button type="button" class="model-delete btn quiet small danger"></button></div>
+        <progress max="100"></progress>`;
       li.querySelector(".model-name")!.textContent = modelName(m.id);
       li.querySelector(".model-use")!.textContent = t("用于：{modes}", { modes: uses });
       li.querySelector(".model-size")!.textContent = formatBytes(m.download_bytes);
-      li.querySelector("button")!.addEventListener("click", () => downloadOne(m.id));
+      li.querySelector(".model-download")!.addEventListener("click", () => downloadOne(m.id));
+      li.querySelector(".model-delete")!.addEventListener("click", () => deleteOne(m.id));
       renderModelRow(li, m);
       return li;
     }),
@@ -600,6 +608,33 @@ async function downloadOne(id: string): Promise<void> {
     s.failed = code === "DOWNLOAD_IN_PROGRESS" ? null : detail;
     refreshModelRow(id);
     toast(code === "DOWNLOAD_IN_PROGRESS" ? t("该模型正在下载") : t("下载失败：{error}", { error: detail }), code !== "DOWNLOAD_IN_PROGRESS");
+  }
+}
+
+async function deleteOne(id: string): Promise<void> {
+  const m = snap.model_files.find((x) => x.id === id);
+  if (!m || !m.installed) return;
+  const s = rowState(m);
+  if (s.downloading || s.deleting) return;
+  const modes = m.used_by.map(modeLabel).join(getLang() === "zh" ? "、" : ", ");
+  const question = t("删除“{name}”模型？{modes}识别将无法使用，需要时可重新下载（{size}）。", {
+    name: modelName(id),
+    modes,
+    size: formatBytes(m.download_bytes),
+  });
+  if ((await ask(question, t("删除"), undefined, true)) === null) return;
+  s.deleting = true;
+  s.failed = null;
+  refreshModelRow(id);
+  try {
+    applyModels(await api.deleteModel(id));
+    toast(t("{name} 已删除", { name: modelName(id) }));
+  } catch (e) {
+    const { code, detail } = errorCode(e);
+    toast(code === "DOWNLOAD_IN_PROGRESS" ? t("该模型正在下载") : t("删除失败：{error}", { error: detail }), true);
+  } finally {
+    s.deleting = false;
+    refreshModelRow(id);
   }
 }
 
@@ -1013,6 +1048,18 @@ $("onboarding-next").addEventListener("click", async () => {
 
 // ------------------------------------------------------------------ boot
 
+/** Headless smoke test: prove the bundled UI, MathJax and IPC work, then let the app exit. */
+async function selfcheck(): Promise<void> {
+  try {
+    const probe = document.createElement("div");
+    await renderInto(probe, "\\frac{a+b}{c^{2}}");
+    const ok = !!probe.querySelector("mjx-container svg");
+    await api.frontendReady(ok, ok ? "mathjax rendered" : "mathjax produced no svg");
+  } catch (e) {
+    await api.frontendReady(false, String((e as Error).message ?? e));
+  }
+}
+
 async function boot(): Promise<void> {
   snap = await api.bootstrap();
   applyTheme(snap.settings.theme);
@@ -1040,6 +1087,7 @@ async function boot(): Promise<void> {
     .catch(() => undefined);
   if (!snap.settings.onboarding_done) openOnboarding();
   document.body.dataset.ready = "true";
+  if (snap.selfcheck) await selfcheck();
 }
 
 boot().catch((e) => toast(String(e), true));

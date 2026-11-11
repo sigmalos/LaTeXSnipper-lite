@@ -246,6 +246,25 @@ h3 {
 .btn.primary:hover {
   background: var(--ink-strong);
 }
+/* Destructive actions: red text at rest, a red wash on hover. */
+.btn.danger,
+.btn.quiet.danger:hover {
+  color: var(--danger);
+}
+.btn.quiet.danger:hover {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+}
+.btn.primary.destructive {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.btn.primary.destructive:hover {
+  background: color-mix(in srgb, var(--danger) 86%, #000);
+}
+:root[data-theme="dark"] .btn.primary.destructive {
+  color: #2a0f0d;
+}
 .btn.icon-only {
   width: 40px;
   padding: 0;
@@ -701,7 +720,7 @@ input[type="radio"] {
 .model-row {
   position: relative;
   display: grid;
-  grid-template-columns: 1fr 64px 112px 76px;
+  grid-template-columns: minmax(0, 1fr) 64px 104px auto;
   align-items: center;
   gap: 10px;
   padding: 7px 0;
@@ -760,8 +779,14 @@ input[type="radio"] {
 .model-row.is-failed .model-state::before {
   background: var(--danger);
 }
-.model-row .btn {
-  width: 100%;
+.model-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  min-width: 76px;
+}
+.model-actions .btn:not(.danger) {
+  min-width: 76px;
 }
 .model-row progress {
   position: absolute;

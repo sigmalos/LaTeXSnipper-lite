@@ -31,7 +31,7 @@
 | 文字检测 | 混合、纯文字 | 4.3 MB |
 | 文字识别 | 混合、纯文字 | 13 MB |
 
-首次使用某种识别类型时会提示下载所需模型；也可以在“设置 → 识别后端 → 内置 MathCraft”中查看每个模型的状态，单独下载或重新下载。下载完成后立即可用，无需重启。已经装过原版的机器无需下载。
+首次使用某种识别类型时会提示下载所需模型；也可以在“设置 → 识别后端 → 内置 MathCraft”中查看每个模型的状态，单独下载、重新下载或删除（删除前会确认）。下载或删除后立即生效，无需重启。已经装过原版的机器无需下载。
 
 ## 开发
 
@@ -48,12 +48,13 @@ npm run dmg                 # 生成 backend/target/release/bundle/dmg/*.dmg
 ```sh
 npm run test:rust           # Rust 单元测试 + 真实模型对拍（无模型时自动跳过；LATEXSNIPPER_MODELS 可指定模型目录）
 npm test                    # 前端单元测试（Vitest）
-npm run test:e2e            # 界面 E2E（Playwright · WebKit，IPC 由 e2e/tauri-mock.js 模拟）
-./scripts/smoke-dmg.sh      # 安装包 E2E：挂载 DMG、检查链接、无界面识别、启动 GUI
+npm run test:e2e            # 界面 E2E（Playwright · 无头 WebKit，IPC 由 e2e/tauri-mock.js 模拟）
+./scripts/smoke-dmg.sh      # 安装包 E2E：挂载 DMG、检查链接、无界面识别、无头启动自检
 ```
 
 - `backend/tests/ocr_parity.rs` 用真实模型跑 `tests/fixtures/*.png`，结果必须与原 Python MathCraft 的输出（`python_reference.json`）完全一致
 - Tauri 的 WebDriver 不支持 macOS，所以界面 E2E 在同引擎的 WebKit 上运行，后端由模拟层替代；真实后端由 Rust 集成测试和 `smoke-dmg.sh` 覆盖
+- 所有测试都不打扰本机：E2E 使用无头 WebKit（不弹窗口、不抢焦点）；`smoke-dmg.sh` 以 `LATEXSNIPPER_HEADLESS=1` 启动应用，不显示窗口、Dock 图标和菜单栏图标，也不注册全局快捷键，由前端渲染一个公式并通过 IPC 回报后自动退出
 
 ## 结构
 

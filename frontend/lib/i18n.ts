@@ -144,6 +144,10 @@ const EN: Record<string, string> = {
   "重新下载": "Download again",
   "{name} 已下载": "{name} downloaded",
   "该模型正在下载": "This model is already downloading",
+  "删除“{name}”模型？{modes}识别将无法使用，需要时可重新下载（{size}）。":
+    "Delete the {name} model? {modes} recognition won’t work until you download it again ({size}).",
+  "{name} 已删除": "{name} deleted",
+  "删除失败：{error}": "Delete failed: {error}",
 };
 
 let current: Lang = "zh";

@@ -108,6 +108,22 @@ pub fn install_archive(root: &Path, model: &str, archive: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Delete an installed model and any leftover partial download.
+/// A symlinked model directory is unlinked; its target is never touched.
+pub fn remove(root: &Path, model: &str) -> Result<()> {
+    spec(model)?; // only known ids: never a path from the caller
+    let dir = root.join(model);
+    match std::fs::symlink_metadata(&dir) {
+        Ok(meta) if meta.file_type().is_symlink() => std::fs::remove_file(&dir)?,
+        Ok(_) => std::fs::remove_dir_all(&dir)?,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(e.into()),
+    }
+    let _ = std::fs::remove_dir_all(root.join(format!(".{model}.staging")));
+    let _ = std::fs::remove_file(root.join(format!(".{model}.zip.part")));
+    Ok(())
+}
+
 pub fn download(root: &Path, model: &str, on_progress: &mut dyn FnMut(Progress)) -> Result<()> {
     let spec = spec(model)?;
     std::fs::create_dir_all(root)?;
@@ -198,6 +214,45 @@ mod tests {
             assert!(spec(id).is_ok(), "{id} missing from manifest");
             assert!(bytes > 1_000_000);
         }
+    }
+
+    #[test]
+    fn remove_deletes_files_and_leftovers() {
+        let dir = tempfile::tempdir().unwrap();
+        let model = dir.path().join("mathcraft-text-det");
+        std::fs::create_dir_all(&model).unwrap();
+        std::fs::write(model.join("ppocrv5_mobile_det.onnx"), b"x").unwrap();
+        std::fs::create_dir_all(dir.path().join(".mathcraft-text-det.staging")).unwrap();
+        std::fs::write(dir.path().join(".mathcraft-text-det.zip.part"), b"x").unwrap();
+        remove(dir.path(), "mathcraft-text-det").unwrap();
+        assert!(!model.exists());
+        assert!(!dir.path().join(".mathcraft-text-det.staging").exists());
+        assert!(!dir.path().join(".mathcraft-text-det.zip.part").exists());
+        remove(dir.path(), "mathcraft-text-det").unwrap(); // already gone: fine
+    }
+
+    #[test]
+    fn remove_unlinks_symlinks_without_touching_the_target() {
+        let target = tempfile::tempdir().unwrap();
+        std::fs::write(target.path().join("ppocrv5_mobile_det.onnx"), b"keep").unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let link = root.path().join("mathcraft-text-det");
+        std::os::unix::fs::symlink(target.path(), &link).unwrap();
+        remove(root.path(), "mathcraft-text-det").unwrap();
+        assert!(std::fs::symlink_metadata(&link).is_err());
+        assert_eq!(
+            std::fs::read(target.path().join("ppocrv5_mobile_det.onnx")).unwrap(),
+            b"keep"
+        );
+    }
+
+    #[test]
+    fn remove_rejects_unknown_ids() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("keep")).unwrap();
+        assert!(remove(dir.path(), "../keep").is_err());
+        assert!(remove(dir.path(), "keep").is_err());
+        assert!(dir.path().join("keep").exists());
     }
 
     #[test]

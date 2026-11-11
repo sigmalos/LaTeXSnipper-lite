@@ -163,3 +163,53 @@ fn models_downloaded_after_startup_are_used_without_restart() {
         reference["mixed"]["text"].as_str().unwrap()
     );
 }
+
+/// Deleting a model from Settings makes recognition ask for it again right away,
+/// and never reaches through a symlinked model directory into its target.
+#[test]
+fn deleting_a_model_takes_effect_without_restart() {
+    let source = std::env::var("LATEXSNIPPER_MODELS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
+    if !model_status(&source).values().all(|v| *v) {
+        eprintln!(
+            "SKIP: MathCraft models not found under {}",
+            source.display()
+        );
+        return;
+    }
+    let Some((_dir, core)) = core_with_each_model_linked(&source) else {
+        return;
+    };
+    let bytes = std::fs::read(fixtures().join("mixed.png")).unwrap();
+    assert!(core.recognize_bytes(&bytes, Some(Mode::Mixed)).is_ok());
+
+    let state = core.delete_model("mathcraft-formula-det").unwrap();
+    assert!(!state.modes["mixed"] && state.modes["formula"] && state.modes["text"]);
+    let err = core.recognize_bytes(&bytes, Some(Mode::Mixed)).unwrap_err();
+    assert_eq!(err.to_string(), "MODELS_MISSING:mathcraft-formula-det");
+    // Formula mode does not need the deleted model and keeps working.
+    let formula = std::fs::read(fixtures().join("frac.png")).unwrap();
+    assert!(core.recognize_bytes(&formula, Some(Mode::Formula)).is_ok());
+    // The real model files behind the link are intact.
+    assert!(source
+        .join("mathcraft-formula-det/mathcraft-mfd.onnx")
+        .is_file());
+}
+
+/// A data dir whose model directories are individual symlinks into `source`.
+fn core_with_each_model_linked(source: &std::path::Path) -> Option<(tempfile::TempDir, Core)> {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("MathCraft/models");
+    std::fs::create_dir_all(&root).unwrap();
+    for id in [
+        "mathcraft-formula-det",
+        "mathcraft-formula-rec",
+        "mathcraft-text-det",
+        "mathcraft-text-rec",
+    ] {
+        std::os::unix::fs::symlink(source.join(id), root.join(id)).unwrap();
+    }
+    let core = Core::new(dir.path());
+    Some((dir, core))
+}

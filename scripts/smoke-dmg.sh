@@ -29,11 +29,19 @@ fi
 echo "== missing models report a stable error"
 if LATEXSNIPPER_DATA_DIR=$(mktemp -d) "$BIN" --selftest "$FIX/frac.png" 2>&1 | grep -q MODELS_MISSING; then echo ok; else echo FAIL; exit 1; fi
 
-echo "== GUI launches and stays up"
-LATEXSNIPPER_DATA_DIR=$(mktemp -d) "$BIN" >/dev/null 2>&1 &
+echo "== app boots headless and its UI passes a self-check"
+# LATEXSNIPPER_HEADLESS=1: no window, Dock icon, menu bar item or global hotkey,
+# so this never touches the desktop it runs on. The bundled UI renders a formula
+# with MathJax, reports over IPC, and the app exits with the result.
+LOG=$(mktemp)
+LATEXSNIPPER_HEADLESS=1 LATEXSNIPPER_DATA_DIR=$(mktemp -d) "$BIN" >"$LOG" 2>&1 &
 PID=$!
-sleep 5
-kill -0 "$PID" || { echo "FAIL: GUI exited"; exit 1; }
-kill "$PID"; wait "$PID" 2>/dev/null || true
-echo "ok"
+i=0
+while kill -0 "$PID" 2>/dev/null && [ $i -lt 300 ]; do sleep 0.1; i=$((i + 1)); done
+if kill -0 "$PID" 2>/dev/null; then
+  kill "$PID"; echo "FAIL: no self-check answer within 30s"; cat "$LOG"; exit 1
+fi
+wait "$PID" && CODE=0 || CODE=$?
+grep -q "LATEXSNIPPER_READY ok=true" "$LOG" && [ "$CODE" -eq 0 ] || { echo "FAIL: exit $CODE"; cat "$LOG"; exit 1; }
+printf "ok: %s\n" "$(grep LATEXSNIPPER_READY "$LOG")"
 echo "PASS"

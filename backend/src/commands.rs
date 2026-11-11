@@ -63,6 +63,8 @@ pub struct Snapshot {
     pub models: BTreeMap<&'static str, bool>,
     pub model_files: Vec<ModelInfo>,
     pub pandoc: bool,
+    /// Headless self-check run (smoke test): the UI reports back and the app exits.
+    pub selfcheck: bool,
     pub data_dir: String,
 }
 
@@ -180,6 +182,29 @@ impl Core {
         Ok(self.models_state())
     }
 
+    /// Delete one installed model. Refused while that model is downloading.
+    pub fn delete_model(&self, id: &str) -> Result<ModelsState> {
+        if !modelhub::CATALOG.iter().any(|(known, _)| *known == id) {
+            bail!("unknown model {id}");
+        }
+        let guard = {
+            let mut set = self.downloading.lock().unwrap_or_else(|p| p.into_inner());
+            if !set.insert(id.to_string()) {
+                bail!("DOWNLOAD_IN_PROGRESS:{id}");
+            }
+            InFlight {
+                set: &self.downloading,
+                id: id.to_string(),
+            }
+        };
+        let root = self.store().models_dir();
+        modelhub::remove(&root, id)?;
+        // Recognitions already running keep their loaded sessions; new ones see it missing.
+        self.invalidate_engine();
+        drop(guard);
+        Ok(self.models_state())
+    }
+
     pub fn download_model(
         &self,
         id: &str,
@@ -198,6 +223,7 @@ impl Core {
             favorites: s.favorites.clone(),
             models: model_status(&s.models_dir()),
             model_files,
+            selfcheck: crate::headless(),
             pandoc: pandoc_path().is_some(),
             data_dir: s.dir().display().to_string(),
         }
@@ -437,6 +463,21 @@ pub async fn download_model(
 }
 
 #[tauri::command]
+pub async fn delete_model(core: State<'_, Arc<Core>>, model: String) -> Res<ModelsState> {
+    let core = core.inner().clone();
+    blocking(move || core.delete_model(&model)).await
+}
+
+/// The UI's answer to a headless self-check; ignored in normal runs.
+#[tauri::command]
+pub fn frontend_ready(app: AppHandle, ok: bool, detail: String) {
+    if crate::headless() {
+        println!("LATEXSNIPPER_READY ok={ok} {detail}");
+        app.exit(if ok { 0 } else { 1 });
+    }
+}
+
+#[tauri::command]
 pub async fn test_external(settings: Settings) -> Res<String> {
     blocking(move || external::test_connection(&settings)).await
 }
@@ -627,6 +668,44 @@ mod tests {
             .unwrap()
             .modes["text"]
         );
+    }
+
+    #[test]
+    fn delete_removes_one_model_and_is_exclusive() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path());
+        let root = dir.path().join("MathCraft/models");
+        for id in ["mathcraft-text-det", "mathcraft-text-rec"] {
+            install_fake(&root, id);
+        }
+        assert!(core.models_state().modes["text"]);
+        let state = core.delete_model("mathcraft-text-det").unwrap();
+        assert!(!state.models[2].installed && !state.models[2].downloading);
+        assert!(state.models[3].installed, "other models are untouched");
+        assert!(!state.modes["text"]);
+        assert!(
+            core.delete_model("mathcraft-text-det").is_ok(),
+            "deleting twice is harmless"
+        );
+        assert!(core
+            .delete_model("../MathCraft")
+            .unwrap_err()
+            .to_string()
+            .contains("unknown model"));
+
+        // Deleting a model while it downloads is refused.
+        core.download_model_with(
+            "mathcraft-text-det",
+            |root, id, _| {
+                let err = core.delete_model(id).unwrap_err().to_string();
+                assert_eq!(err, "DOWNLOAD_IN_PROGRESS:mathcraft-text-det");
+                install_fake(root, id);
+                Ok(())
+            },
+            &mut |_| {},
+        )
+        .unwrap();
+        assert!(core.models_state().modes["text"]);
     }
 
     #[test]

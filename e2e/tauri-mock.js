@@ -133,6 +133,7 @@
       models: modes(),
       model_files: modelsState().models,
       pandoc: !!seed.pandoc,
+      selfcheck: false,
       data_dir: "/Users/demo/Library/Application Support/LaTeXSnipper",
     }),
     save_settings: ({ settings }) => {
@@ -151,6 +152,14 @@
       return modelsState();
     },
     list_models: () => modelsState(),
+    delete_model: ({ model }) => {
+      if (!SIZES[model]) throw `unknown model ${model}`;
+      if (state.downloading.has(model)) throw `DOWNLOAD_IN_PROGRESS:${model}`;
+      if (seed.deleteFails) throw "Operation not permitted (os error 1)";
+      state.installed.delete(model);
+      return modelsState();
+    },
+    frontend_ready: () => undefined,
     download_model: async ({ model }) => {
       if (!SIZES[model]) throw `unknown model ${model}`;
       await downloadOne(model);

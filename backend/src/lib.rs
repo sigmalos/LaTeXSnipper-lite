@@ -11,6 +11,13 @@ use std::sync::Arc;
 use tauri::{Emitter, RunEvent, WindowEvent};
 use tauri_plugin_global_shortcut::ShortcutState;
 
+/// `LATEXSNIPPER_HEADLESS=1`: start without a window, Dock icon, menu bar item
+/// or global hotkey, let the UI run its self-check, then exit. Used by the DMG
+/// smoke test so it never takes over the desktop it runs on.
+pub fn headless() -> bool {
+    std::env::var("LATEXSNIPPER_HEADLESS").is_ok_and(|v| v == "1")
+}
+
 /// Shared with the legacy Qt app so history, favorites and models carry over.
 pub fn data_dir() -> PathBuf {
     if let Ok(dir) = std::env::var("LATEXSNIPPER_DATA_DIR") {
@@ -45,11 +52,18 @@ pub fn run() {
             }
         })
         .setup(move |app| {
+            if headless() {
+                // Keep the hidden window; no Dock icon, no focus change, no hotkey.
+                app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+                return Ok(());
+            }
             let settings = core.settings();
             shell::install_tray(app.handle(), &settings)?;
             if let Err(e) = shell::register_hotkey(app.handle(), &settings.hotkey) {
                 eprintln!("hotkey {} unavailable: {e}", settings.hotkey);
             }
+            // The window starts hidden (tauri.conf.json) so headless runs never flash it.
+            shell::show_main(app.handle());
             // Load the formula model off the UI thread so the first capture is fast.
             let warm = core.clone();
             std::thread::spawn(move || {
@@ -69,6 +83,8 @@ pub fn run() {
             commands::download_models,
             commands::list_models,
             commands::download_model,
+            commands::delete_model,
+            commands::frontend_ready,
             commands::test_external,
             commands::export_file,
             commands::history_op,
