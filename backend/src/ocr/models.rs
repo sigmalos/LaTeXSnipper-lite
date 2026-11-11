@@ -1,6 +1,7 @@
 //! ONNX Runtime wrappers for the four MathCraft models.
 
 use super::geometry::{components, min_area_rect, mini_box, point_in_polygon, unclip_rect, Pt};
+use super::gpu::{self, Gpu};
 use super::imageops::{resize, round_half_even, to_chw};
 use super::tokenizer::Tokenizer;
 use anyhow::{anyhow, bail, Context, Result};
@@ -29,18 +30,28 @@ fn session_builder() -> Result<SessionBuilder> {
         .with_intra_threads(threads)?)
 }
 
-fn open_session(path: &Path) -> Result<Session> {
-    session_builder()?
+/// A CPU session builder, with the GPU provider added when `gpu` is given.
+fn builder_for(gpu: Option<&Gpu>) -> Result<SessionBuilder> {
+    let builder = session_builder()?;
+    match gpu {
+        None => Ok(builder),
+        Some(gpu) => gpu::register(builder, gpu)
+            .with_context(|| format!("{} execution provider unavailable", gpu.provider)),
+    }
+}
+
+fn open_session(path: &Path, gpu: Option<&Gpu>) -> Result<Session> {
+    builder_for(gpu)?
         .commit_from_file(path)
         .with_context(|| format!("failed to load {}", path.display()))
 }
 
-fn open_decoder(path: &Path) -> Result<Session> {
+fn open_decoder(path: &Path, gpu: Option<&Gpu>) -> Result<Session> {
     let model =
         std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
     let graph = super::decoder::next_token_graph(&model)?;
     drop(model);
-    session_builder()?
+    builder_for(gpu)?
         .commit_from_memory(&graph)
         .with_context(|| format!("failed to load {}", path.display()))
 }
@@ -60,32 +71,104 @@ fn find_onnx(dir: &Path, needle: &str) -> Result<PathBuf> {
         .ok_or_else(|| anyhow!("no *{needle}*.onnx under {}", dir.display()))
 }
 
+type Loader = fn(&Path, Option<&Gpu>) -> Result<Session>;
+
+struct Loaded {
+    session: Session,
+    on_gpu: bool,
+}
+
 /// A lazily opened session guarded for `&mut` access during `run`.
+///
+/// It is opened on the GPU when one is available and falls back to the CPU
+/// if that fails, either while loading or later during a run.
 struct Lazy {
     path: Result<PathBuf, String>,
-    load: fn(&Path) -> Result<Session>,
-    cell: OnceLock<Mutex<Session>>,
+    load: Loader,
+    cell: OnceLock<Mutex<Loaded>>,
 }
 
 impl Lazy {
     fn new(path: Result<PathBuf>) -> Self {
         Self::with_loader(path, open_session)
     }
-    fn with_loader(path: Result<PathBuf>, load: fn(&Path) -> Result<Session>) -> Self {
+    fn with_loader(path: Result<PathBuf>, load: Loader) -> Self {
         Self {
             path: path.map_err(|e| e.to_string()),
             load,
             cell: OnceLock::new(),
         }
     }
-    fn get(&self) -> Result<&Mutex<Session>> {
+    fn path(&self) -> Result<&Path> {
+        self.path.as_deref().map_err(|e| anyhow!(e.clone()))
+    }
+    fn open(&self) -> Result<Loaded> {
+        let path = self.path()?;
+        if let Some(gpu) = gpu::preferred() {
+            match (self.load)(path, Some(gpu)) {
+                Ok(session) => {
+                    eprintln!("ocr: {} runs on {}", file_name(path), gpu.provider);
+                    return Ok(Loaded {
+                        session,
+                        on_gpu: true,
+                    });
+                }
+                Err(gpu_err) => {
+                    // A model that fails on the CPU too is broken; that is
+                    // not the GPU's fault, so leave the GPU enabled.
+                    let session = (self.load)(path, None)?;
+                    gpu::disable(&format!(
+                        "{} failed to load on {}: {gpu_err:#}",
+                        file_name(path),
+                        gpu.provider
+                    ));
+                    return Ok(Loaded {
+                        session,
+                        on_gpu: false,
+                    });
+                }
+            }
+        }
+        Ok(Loaded {
+            session: (self.load)(path, None)?,
+            on_gpu: false,
+        })
+    }
+    fn get(&self) -> Result<&Mutex<Loaded>> {
         if let Some(s) = self.cell.get() {
             return Ok(s);
         }
-        let path = self.path.as_ref().map_err(|e| anyhow!(e.clone()))?;
-        let session = (self.load)(path)?;
-        Ok(self.cell.get_or_init(|| Mutex::new(session)))
+        let loaded = self.open()?;
+        Ok(self.cell.get_or_init(|| Mutex::new(loaded)))
     }
+    /// Run `f` on the session. If it fails on the GPU, try again on a fresh
+    /// CPU session; when that works, keep using the CPU from then on.
+    fn run<T>(&self, mut f: impl FnMut(&mut Session) -> Result<T>) -> Result<T> {
+        let mut loaded = self.get()?.lock().unwrap();
+        match f(&mut loaded.session) {
+            Err(gpu_err) if loaded.on_gpu => {
+                let path = self.path()?;
+                let mut cpu = (self.load)(path, None)?;
+                let result = f(&mut cpu)?;
+                gpu::disable(&format!(
+                    "{} failed on the GPU: {gpu_err:#}",
+                    file_name(path)
+                ));
+                *loaded = Loaded {
+                    session: cpu,
+                    on_gpu: false,
+                };
+                Ok(result)
+            }
+            result => result,
+        }
+    }
+}
+
+fn file_name(path: &Path) -> std::borrow::Cow<'_, str> {
+    path.file_name()
+        .unwrap_or(path.as_os_str())
+        .to_string_lossy()
 }
 
 fn f32_output(outputs: &ort::session::SessionOutputs<'_>) -> Result<(Vec<i64>, Vec<f32>)> {
@@ -165,13 +248,11 @@ impl FormulaRecognizer {
             pixels.extend(to_chw(&resized, 1.0 / 255.0, [0.5; 3], [0.5; 3], false));
         }
         let batch = images.len();
-        let (hidden_shape, hidden) = {
-            let mut enc = self.encoder.get()?.lock().unwrap();
-            let input =
-                Tensor::from_array((vec![batch as i64, 3, SIZE as i64, SIZE as i64], pixels))?;
-            let out = enc.run(ort::inputs![input])?;
-            f32_output(&out)?
-        };
+        let input = Tensor::from_array((vec![batch as i64, 3, SIZE as i64, SIZE as i64], pixels))?;
+        let (hidden_shape, hidden) = self
+            .encoder
+            .run(|enc| f32_output(&enc.run(ort::inputs![&input])?))?;
+        drop(input);
         let (seq, dim) = (hidden_shape[1] as usize, hidden_shape[2] as usize);
         let per_row = seq * dim;
         let (start_id, eos) = self.generation_ids();
@@ -183,7 +264,6 @@ impl FormulaRecognizer {
         let mut repeated = vec![false; batch];
         let mut input_ids = Vec::new();
         let mut keep = Vec::with_capacity(batch);
-        let mut dec = self.decoder.get()?.lock().unwrap();
         for step in 0..MAX_NEW_TOKENS {
             let n = active.len();
             let len = step + 1;
@@ -192,10 +272,12 @@ impl FormulaRecognizer {
                 input_ids.push(start_id);
                 input_ids.extend(&ids[row]);
             }
-            let id_tensor = TensorRef::from_array_view(([n, len], input_ids.as_slice()))?;
-            let hid_tensor = TensorRef::from_array_view(([n, seq, dim], active_hidden.as_slice()))?;
-            let out = dec.run(ort::inputs![id_tensor, hid_tensor])?;
-            let (shape, logits) = out[0].try_extract_tensor::<f32>()?;
+            let (shape, logits) = self.decoder.run(|dec| {
+                let id_tensor = TensorRef::from_array_view(([n, len], input_ids.as_slice()))?;
+                let hid_tensor =
+                    TensorRef::from_array_view(([n, seq, dim], active_hidden.as_slice()))?;
+                f32_output(&dec.run(ort::inputs![id_tensor, hid_tensor])?)
+            })?;
             if shape.len() != 2 || shape[0] != n as i64 || shape[1] <= 0 {
                 bail!("unexpected next-token logits shape: {shape:?}");
             }
@@ -217,7 +299,6 @@ impl FormulaRecognizer {
                 }
                 keep.push(a);
             }
-            drop(out);
             if keep.is_empty() {
                 break;
             }
@@ -235,7 +316,6 @@ impl FormulaRecognizer {
                 active.truncate(keep.len());
             }
         }
-        drop(dec);
         let tok = self.tokenizer()?;
         Ok((0..batch)
             .map(|row| {
@@ -328,11 +408,9 @@ impl FormulaDetector {
             vec![1i64, 3, SIZE as i64, SIZE as i64],
             to_chw(&canvas, 1.0 / 255.0, [0.0; 3], [1.0; 3], false),
         ))?;
-        let (shape, data) = {
-            let mut s = self.session.get()?.lock().unwrap();
-            let out = s.run(ort::inputs![input])?;
-            f32_output(&out)?
-        };
+        let (shape, data) = self
+            .session
+            .run(|s| f32_output(&s.run(ort::inputs![&input])?))?;
         let (channels, n) = (shape[1] as usize, shape[2] as usize);
         if channels < 6 {
             return Ok(vec![]);
@@ -415,11 +493,9 @@ impl TextDetector {
             vec![1i64, 3, rh as i64, rw as i64],
             to_chw(&resized, 1.0 / 255.0, [0.5; 3], [0.5; 3], true),
         ))?;
-        let (shape, pred) = {
-            let mut s = self.session.get()?.lock().unwrap();
-            let out = s.run(ort::inputs![input])?;
-            f32_output(&out)?
-        };
+        let (shape, pred) = self
+            .session
+            .run(|s| f32_output(&s.run(ort::inputs![&input])?))?;
         let (ph, pw) = (shape[2] as usize, shape[3] as usize);
         Ok(db_postprocess(&pred, pw, ph, w as usize, h as usize))
     }
@@ -584,11 +660,9 @@ impl TextRecognizer {
                 }
             }
             let input = Tensor::from_array((vec![chunk.len() as i64, 3, 48, img_w as i64], batch))?;
-            let (shape, probs) = {
-                let mut s = self.session.get()?.lock().unwrap();
-                let out = s.run(ort::inputs![input])?;
-                f32_output(&out)?
-            };
+            let (shape, probs) = self
+                .session
+                .run(|s| f32_output(&s.run(ort::inputs![&input])?))?;
             let (steps, classes) = (shape[1] as usize, shape[2] as usize);
             if classes != keys.len() {
                 bail!(

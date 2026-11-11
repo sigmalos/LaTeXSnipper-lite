@@ -19,6 +19,16 @@ runs:
         rustup toolchain install "$channel" --profile minimal --component clippy,rustfmt --no-self-update
         rustc --version
 
+    # ONNX Runtime prebuilt binaries (the Linux CUDA build is ~170 MB).
+    - uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cache/ort.pyke.io
+          ~/Library/Caches/ort.pyke.io
+          ~/AppData/Local/ort.pyke.io
+        key: ort-binaries-${{ runner.os }}-${{ hashFiles('backend/Cargo.lock') }}
+        restore-keys: ort-binaries-${{ runner.os }}-
+
     - uses: Swatinem/rust-cache@v2
       with:
         workspaces: backend -> target
@@ -32,3 +42,10 @@ runs:
         sudo apt-get install -yq --no-install-recommends \
           libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev \
           libxdo-dev patchelf xvfb
+
+    # Bundled next to the Windows exe so ONNX Runtime can use the GPU; the
+    # Tauri build script refuses to run while a listed resource is missing.
+    - name: DirectML redistributable
+      if: runner.os == 'Windows'
+      shell: bash
+      run: node scripts/fetch-directml.mjs

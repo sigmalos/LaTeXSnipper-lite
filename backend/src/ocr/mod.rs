@@ -7,6 +7,7 @@
 
 mod decoder;
 pub mod geometry;
+pub mod gpu;
 pub mod imageops;
 pub mod latex;
 pub mod layout;

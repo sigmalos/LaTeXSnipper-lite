@@ -1950,6 +1950,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "image",
+ "libc",
  "onnx-rs",
  "ort",
  "serde",
@@ -1963,6 +1964,7 @@ dependencies = [
  "tempfile",
  "tiny_http",
  "ureq 2.12.1",
+ "windows",
  "zip",
 ]
 

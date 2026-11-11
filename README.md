@@ -70,6 +70,20 @@
 
 在「设置 → 识别后端 → 内置 MathCraft」中可以查看每个模型的状态，并单独下载、重新下载或删除。改动立即生效，不需要重启。
 
+### GPU 加速（Windows / Linux）
+
+Windows 和 Linux 版加载模型时会先检测 GPU，有可用的 GPU 就在 GPU 上运行。没有 GPU、驱动或运行库缺失、模型在 GPU 上加载或运行出错时，会自动改用 CPU，识别照常进行。macOS 版始终使用 CPU。
+
+- **Windows**：通过 DirectML 使用 GPU，支持 Direct3D 12 的 NVIDIA、AMD、Intel 显卡都可以，不需要额外安装。有多块显卡时优先使用显存最大的独立显卡。安装包为此附带了 DirectML 1.15.4（`DirectML.dll`，约 18 MB），系统自带的版本太旧，ONNX Runtime 用不了。
+- **Linux**：通过 CUDA 使用 NVIDIA 显卡。CUDA 运行库体积很大（单是 ONNX Runtime 的 CUDA 模块就有约 400 MB），安装包里没有附带，需要自己准备：
+  1. 安装 NVIDIA 驱动、CUDA 12 和 cuDNN 9。
+  2. 从 ONNX Runtime 的 [v1.22.0 发布页](https://github.com/microsoft/onnxruntime/releases/tag/v1.22.0) 下载 `onnxruntime-linux-x64-gpu-1.22.0.tgz`，把其中 `lib/` 下的 `libonnxruntime_providers_cuda.so` 和 `libonnxruntime_providers_shared.so` 复制到 `~/.local/share/LaTeXSnipper/onnxruntime-cuda/`。版本必须是 1.22。
+  3. 重新打开应用。
+
+  应用按以下顺序查找这两个文件：环境变量 `LATEXSNIPPER_CUDA_DIR` 指定的目录、`~/.local/share/LaTeXSnipper/onnxruntime-cuda/`、程序所在目录，最后是系统库路径（`LD_LIBRARY_PATH`、ldconfig）。CUDA 和 cuDNN 的库也可以直接放进同一个目录。
+
+从终端启动应用，可以在输出里看到以 `ocr:` 开头的日志，比如找到了哪块 GPU、每个模型在哪个设备上运行，以及没有用上 GPU 的原因。设置环境变量 `LATEXSNIPPER_DEVICE=cpu` 可以强制只用 CPU。GPU 的浮点运算顺序和 CPU 不同，个别情况下识别结果可能和 CPU 版有细微差别。
+
 ## 常见问题
 
 **⌘F 和其他应用的「查找」冲突了？**
@@ -105,7 +119,7 @@ npm run tauri dev     # 开发模式运行
 npm run dmg           # 构建 DMG，输出到 backend/target/release/bundle/dmg/
 ```
 
-在 Windows x64 上安装 Visual Studio C++ 生成工具和 Windows SDK 后，运行 `npm run tauri -- build --bundles nsis`。安装包输出到 `backend/target/release/bundle/nsis/`。
+在 Windows x64 上安装 Visual Studio C++ 生成工具和 Windows SDK 后，运行 `npm run tauri -- build --bundles nsis`。安装包输出到 `backend/target/release/bundle/nsis/`。构建前会自动下载 DirectML（`npm run directml`，从 NuGet 只取出其中的 `DirectML.dll` 并校验 SHA-256）；直接运行 `cargo` 命令前需要先手动执行一次这个命令，网络慢时可以用 `DIRECTML_NUPKG_URL` 指定 NuGet 镜像。
 
 <details>
 <summary><b>测试</b></summary>

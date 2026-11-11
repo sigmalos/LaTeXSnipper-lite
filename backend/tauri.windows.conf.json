@@ -1,9 +1,14 @@
 {
   "productName": "LaTeXSnipper Lite",
   "identifier": "io.github.sakuramathcraft.latexsnipper.lite",
+  "build": {
+    "beforeDevCommand": "node scripts/fetch-directml.mjs && npm run dev",
+    "beforeBuildCommand": "node scripts/fetch-directml.mjs && npm run build"
+  },
   "bundle": {
     "targets": ["nsis"],
     "icon": ["icons/icon.ico"],
+    "resources": { "resources/windows/DirectML.dll": "DirectML.dll" },
     "windows": {
       "bundleVCRuntime": true
     }

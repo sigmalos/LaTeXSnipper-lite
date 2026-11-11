@@ -13,6 +13,7 @@
 - **macOS**：安装包未经 Apple 公证，首次打开若提示无法验证，请在「系统设置 → 隐私与安全性」底部点「仍要打开」。
 - **Windows**：安装包未签名，SmartScreen 提示时点「更多信息 → 仍要运行」。安装无需管理员权限；缺少 Microsoft Edge WebView2 Runtime 时安装程序会自动下载。应用以「LaTeXSnipper Lite」的名字单独安装，可与原版同时使用，数据保存在 `%LOCALAPPDATA%\LaTeXSnipper Lite`。
 - **Windows 上代替截图识别**：先用系统自带的 **Win + Shift + S** 截图，再回到应用按 **Ctrl + V** 粘贴识别。
+- **GPU 加速**：Windows 版通过 DirectML 自动使用显卡（NVIDIA / AMD / Intel）。Linux 版在装好 CUDA 12、cuDNN 9，并放入 ONNX Runtime 1.22 的 CUDA 模块后使用 NVIDIA 显卡，步骤见 README。没有可用的 GPU 时自动改用 CPU。
 - 识别模型在第一次识别时按需下载，并逐文件校验 SHA-256。
 
 校验文件完整性：`sha256sum -c SHA256SUMS.txt`（macOS 用 `shasum -a 256 -c SHA256SUMS.txt`）。

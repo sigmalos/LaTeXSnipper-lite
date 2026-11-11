@@ -12,7 +12,8 @@
     "test:e2e": "playwright test",
     "lint": "tsc --noEmit",
     "dmg": "tauri build --bundles dmg",
-    "test:dmg": "./scripts/smoke-dmg.sh"
+    "test:dmg": "./scripts/smoke-dmg.sh",
+    "directml": "node scripts/fetch-directml.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

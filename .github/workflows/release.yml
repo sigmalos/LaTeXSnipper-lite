@@ -99,6 +99,7 @@ jobs:
         shell: bash
         run: |
           dir="$LOCALAPPDATA/LaTeXSnipper Lite"
+          test -f "$dir/DirectML.dll" || { echo "DirectML.dll missing from the install"; ls "$dir"; exit 1; }
           bin=$(ls "$dir"/*.exe | grep -vi uninstall | head -1)
           echo "installed $bin"; scripts/smoke.sh "$bin" --require-models
 
