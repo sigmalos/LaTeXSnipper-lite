@@ -5,6 +5,7 @@
 //! * `mixed`   – formula detection + text OCR merged into Markdown
 //! * `text`    – plain text OCR
 
+mod decoder;
 pub mod geometry;
 pub mod imageops;
 pub mod latex;

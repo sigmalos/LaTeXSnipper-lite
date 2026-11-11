@@ -1,0 +1,11 @@
+{
+  "productName": "LaTeXSnipper Lite",
+  "identifier": "io.github.sakuramathcraft.latexsnipper.lite",
+  "bundle": {
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"],
+    "windows": {
+      "bundleVCRuntime": true
+    }
+  }
+}

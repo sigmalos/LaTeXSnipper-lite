@@ -231,6 +231,7 @@ mod tests {
         remove(dir.path(), "mathcraft-text-det").unwrap(); // already gone: fine
     }
 
+    #[cfg(unix)]
     #[test]
     fn remove_unlinks_symlinks_without_touching_the_target() {
         let target = tempfile::tempdir().unwrap();

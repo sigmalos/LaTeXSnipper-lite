@@ -1,3 +1,5 @@
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 fn main() {
     // `LaTeXSnipper --selftest <image>`: headless OCR check used by the DMG smoke test.
     let args: Vec<String> = std::env::args().collect();

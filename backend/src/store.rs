@@ -137,6 +137,9 @@ fn write_atomic(path: &Path, contents: &str, private: bool) -> Result<()> {
     }
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, contents)?;
+    #[cfg(not(unix))]
+    let _ = private;
+    #[cfg(unix)]
     if private {
         use std::os::unix::fs::PermissionsExt;
         std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600))?;
@@ -415,7 +418,6 @@ mod tests {
 
     #[test]
     fn settings_are_validated_and_private() {
-        use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let mut s = Store::open(dir.path());
         assert_eq!(s.settings, Settings::default());
@@ -430,11 +432,15 @@ mod tests {
             ..Settings::default()
         };
         s.save_settings(good.clone()).unwrap();
-        let path = dir.path().join("settings.json");
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-            0o600
-        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let path = dir.path().join("settings.json");
+            assert_eq!(
+                std::fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+        }
         assert_eq!(Store::open(dir.path()).settings, good);
     }
 

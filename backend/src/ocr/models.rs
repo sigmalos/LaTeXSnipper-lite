@@ -5,8 +5,11 @@ use super::imageops::{resize, round_half_even, to_chw};
 use super::tokenizer::Tokenizer;
 use anyhow::{anyhow, bail, Context, Result};
 use image::{imageops::FilterType, Rgb, RgbImage};
-use ort::session::{builder::GraphOptimizationLevel, Session};
-use ort::value::Tensor;
+use ort::session::{
+    builder::{GraphOptimizationLevel, SessionBuilder},
+    Session,
+};
+use ort::value::{Tensor, TensorRef};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
@@ -16,15 +19,29 @@ pub const TEXT_DET: &str = "mathcraft-text-det";
 pub const TEXT_REC: &str = "mathcraft-text-rec";
 pub const MAX_NEW_TOKENS: usize = 512;
 
-fn open_session(path: &Path) -> Result<Session> {
+fn session_builder() -> Result<SessionBuilder> {
     let threads = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(4)
         .min(8);
-    Session::builder()?
+    Ok(Session::builder()?
         .with_optimization_level(GraphOptimizationLevel::Level3)?
-        .with_intra_threads(threads)?
+        .with_intra_threads(threads)?)
+}
+
+fn open_session(path: &Path) -> Result<Session> {
+    session_builder()?
         .commit_from_file(path)
+        .with_context(|| format!("failed to load {}", path.display()))
+}
+
+fn open_decoder(path: &Path) -> Result<Session> {
+    let model =
+        std::fs::read(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let graph = super::decoder::next_token_graph(&model)?;
+    drop(model);
+    session_builder()?
+        .commit_from_memory(&graph)
         .with_context(|| format!("failed to load {}", path.display()))
 }
 
@@ -46,13 +63,18 @@ fn find_onnx(dir: &Path, needle: &str) -> Result<PathBuf> {
 /// A lazily opened session guarded for `&mut` access during `run`.
 struct Lazy {
     path: Result<PathBuf, String>,
+    load: fn(&Path) -> Result<Session>,
     cell: OnceLock<Mutex<Session>>,
 }
 
 impl Lazy {
     fn new(path: Result<PathBuf>) -> Self {
+        Self::with_loader(path, open_session)
+    }
+    fn with_loader(path: Result<PathBuf>, load: fn(&Path) -> Result<Session>) -> Self {
         Self {
             path: path.map_err(|e| e.to_string()),
+            load,
             cell: OnceLock::new(),
         }
     }
@@ -61,7 +83,7 @@ impl Lazy {
             return Ok(s);
         }
         let path = self.path.as_ref().map_err(|e| anyhow!(e.clone()))?;
-        let session = open_session(path)?;
+        let session = (self.load)(path)?;
         Ok(self.cell.get_or_init(|| Mutex::new(session)))
     }
 }
@@ -84,7 +106,7 @@ impl FormulaRecognizer {
     pub fn new(dir: PathBuf) -> Self {
         Self {
             encoder: Lazy::new(Ok(dir.join("encoder_model.onnx"))),
-            decoder: Lazy::new(Ok(dir.join("decoder_model.onnx"))),
+            decoder: Lazy::with_loader(Ok(dir.join("decoder_model.onnx")), open_decoder),
             tokenizer: OnceLock::new(),
             dir,
         }
@@ -159,27 +181,29 @@ impl FormulaRecognizer {
         let mut ids: Vec<Vec<i64>> = vec![vec![]; batch];
         let mut scores: Vec<Vec<f64>> = vec![vec![]; batch];
         let mut repeated = vec![false; batch];
+        let mut input_ids = Vec::new();
+        let mut keep = Vec::with_capacity(batch);
         let mut dec = self.decoder.get()?.lock().unwrap();
         for step in 0..MAX_NEW_TOKENS {
             let n = active.len();
             let len = step + 1;
-            let mut input_ids = Vec::with_capacity(n * len);
+            input_ids.clear();
             for &row in &active {
                 input_ids.push(start_id);
                 input_ids.extend(&ids[row]);
             }
-            let id_tensor = Tensor::from_array((vec![n as i64, len as i64], input_ids))?;
-            let hid_tensor = Tensor::from_array((
-                vec![n as i64, seq as i64, dim as i64],
-                active_hidden.clone(),
-            ))?;
+            let id_tensor = TensorRef::from_array_view(([n, len], input_ids.as_slice()))?;
+            let hid_tensor = TensorRef::from_array_view(([n, seq, dim], active_hidden.as_slice()))?;
             let out = dec.run(ort::inputs![id_tensor, hid_tensor])?;
-            let (shape, logits) = f32_output(&out)?;
-            let vocab = shape[2] as usize;
-            let mut keep = Vec::new();
-            for (a, &row) in active.iter().enumerate() {
-                let offset = (a * len + len - 1) * vocab;
-                let (tok, prob) = argmax_softmax(&logits[offset..offset + vocab]);
+            let (shape, logits) = out[0].try_extract_tensor::<f32>()?;
+            if shape.len() != 2 || shape[0] != n as i64 || shape[1] <= 0 {
+                bail!("unexpected next-token logits shape: {shape:?}");
+            }
+            let vocab = shape[1] as usize;
+            keep.clear();
+            for (a, (&row, row_logits)) in active.iter().zip(logits.chunks_exact(vocab)).enumerate()
+            {
+                let (tok, prob) = argmax_softmax(row_logits);
                 if Some(tok as i64) == eos {
                     continue;
                 }
@@ -193,15 +217,22 @@ impl FormulaRecognizer {
                 }
                 keep.push(a);
             }
+            drop(out);
             if keep.is_empty() {
                 break;
             }
             if keep.len() != n {
-                active_hidden = keep
-                    .iter()
-                    .flat_map(|&a| active_hidden[a * per_row..(a + 1) * per_row].to_vec())
-                    .collect();
-                active = keep.iter().map(|&a| active[a]).collect();
+                for (target, &source) in keep.iter().enumerate() {
+                    if target != source {
+                        active_hidden.copy_within(
+                            source * per_row..(source + 1) * per_row,
+                            target * per_row,
+                        );
+                        active[target] = active[source];
+                    }
+                }
+                active_hidden.truncate(keep.len() * per_row);
+                active.truncate(keep.len());
             }
         }
         drop(dec);

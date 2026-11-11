@@ -202,9 +202,11 @@ function renderHistory(): void {
   if (!snap.history.length) {
     const li = document.createElement("li");
     li.className = "empty";
-    li.textContent = t("还没有识别记录。按 {hotkey} 截图识别，或把图片拖到窗口里。", {
-      hotkey: formatAccelerator(snap.settings.hotkey),
-    });
+    li.textContent = snap.capture_supported
+      ? t("还没有识别记录。按 {hotkey} 截图识别，或把图片拖到窗口里。", {
+          hotkey: formatAccelerator(snap.settings.hotkey),
+        })
+      : t("还没有识别记录。拖入图片或粘贴截图即可识别。");
     ol.appendChild(li);
     return;
   }
@@ -1004,26 +1006,32 @@ $("pdf-export").addEventListener("click", () => exportAs($<HTMLTextAreaElement>(
 
 const STEPS = [
   ["选择识别类型", "公式适合单个或多行公式；混合适合含公式的段落；纯文字只识别文字。在“设置”里随时切换。"],
-  ["截图识别", "按 {hotkey}，或点“截图识别”，框选屏幕上的公式。首次使用时 macOS 会请求屏幕录制权限。"],
   ["确认结果", "识别结果会先显示在确认窗口里，可以修改。确认后复制到剪贴板，并记入历史。"],
-  ["图片、PDF 与手写", "也可以拖入图片、粘贴截图（⌘V）、识别整份 PDF，或直接手写公式。"],
+  ["图片、PDF 与手写", "可以拖入图片、粘贴截图、识别整份 PDF，或直接手写公式。"],
 ];
 let step = 0;
 
+function onboardingSteps(): string[][] {
+  return snap.capture_supported
+    ? [STEPS[0], ["截图识别", "按 {hotkey}，或点“截图识别”，框选屏幕上的公式。首次使用时 macOS 会请求屏幕录制权限。"], ...STEPS.slice(1)]
+    : STEPS;
+}
+
 function showStep(): void {
   const hotkey = formatAccelerator(snap.settings.hotkey);
+  const steps = onboardingSteps();
   $("onboarding-steps").innerHTML = "";
-  STEPS.forEach(([title, body], i) => {
+  steps.forEach(([title, body], i) => {
     const li = document.createElement("li");
     li.className = i === step ? "on" : "";
-    li.innerHTML = `<span class="n">${i + 1} / ${STEPS.length}</span><h3></h3><p></p>`;
+    li.innerHTML = `<span class="n">${i + 1} / ${steps.length}</span><h3></h3><p></p>`;
     li.querySelector("h3")!.textContent = t(title);
     li.querySelector("p")!.textContent = t(body, { hotkey });
     $("onboarding-steps").appendChild(li);
   });
-  $("onboarding-dots").innerHTML = STEPS.map((_, i) => `<i class="${i === step ? "on" : ""}"></i>`).join("");
+  $("onboarding-dots").innerHTML = steps.map((_, i) => `<i class="${i === step ? "on" : ""}"></i>`).join("");
   $<HTMLButtonElement>("onboarding-back").disabled = step === 0;
-  $("onboarding-next").textContent = t(step === STEPS.length - 1 ? "开始使用" : "下一步");
+  $("onboarding-next").textContent = t(step === steps.length - 1 ? "开始使用" : "下一步");
 }
 
 function openOnboarding(): void {
@@ -1038,7 +1046,7 @@ $("onboarding-back").addEventListener("click", () => {
   showStep();
 });
 $("onboarding-next").addEventListener("click", async () => {
-  if (step < STEPS.length - 1) {
+  if (step < onboardingSteps().length - 1) {
     step++;
     return showStep();
   }
@@ -1062,11 +1070,13 @@ async function selfcheck(): Promise<void> {
 
 async function boot(): Promise<void> {
   snap = await api.bootstrap();
+  $("capture-btn").hidden = !snap.capture_supported;
+  $("hotkey-btn").hidden = !snap.capture_supported;
   applyTheme(snap.settings.theme);
   applyLanguage();
   const last = snap.history[snap.history.length - 1];
   if (last) loadIntoEditor(last.text, last.kind);
-  await api.onHotkey(capture);
+  if (snap.capture_supported) await api.onHotkey(capture);
   await api.onOpenSettings(openSettings);
   await api.onProgress((p) => {
     const s = rowStates.get(p.model);

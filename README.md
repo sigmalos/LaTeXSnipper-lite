@@ -2,17 +2,19 @@
 
 # LaTeXSnipper Lite
 
-**把截图、图片、PDF 和手写变成可编辑的 LaTeX —— macOS 轻量版**
+**把截图、图片、PDF 和手写变成可编辑的 LaTeX**
 
-[下载 DMG](https://github.com/sigmalos/LaTeXSnipper-lite/releases/latest) · [原版 LaTeXSnipper](https://github.com/SakuraMathcraft/LaTeXSnipper) · [模型仓库](https://github.com/SakuraMathcraft/MathCraft-Models)
+[下载](https://github.com/sigmalos/LaTeXSnipper-lite/releases/latest) · [原版 LaTeXSnipper](https://github.com/SakuraMathcraft/LaTeXSnipper) · [模型仓库](https://github.com/SakuraMathcraft/MathCraft-Models)
 
 <img src="docs/screenshot.png" width="860" alt="LaTeXSnipper Lite 主界面：左侧历史记录，右侧 LaTeX 编辑器与实时渲染预览" />
 
 </div>
 
-本项目是 [SakuraMathcraft/LaTeXSnipper](https://github.com/SakuraMathcraft/LaTeXSnipper) 的 macOS 专版重写。识别效果、界面布局和数据格式都沿用原版，只是把 Python + Qt + Chromium 换成了 Rust + Tauri，macOS 安装包从 552 MB 降到 **12 MB**。
+本项目是 [SakuraMathcraft/LaTeXSnipper](https://github.com/SakuraMathcraft/LaTeXSnipper) 的轻量版。识别效果和界面布局沿用原版，使用 Rust 和 Tauri，macOS 安装包约 **12 MB**。
 
 ## 下载与安装
+
+### macOS
 
 **系统要求**：macOS 13 或更新版本，Apple Silicon（M 系列芯片）。
 
@@ -26,16 +28,20 @@
 
 4. 第一次截图时，按提示在「系统设置 → 隐私与安全性 → 屏幕录制」中允许 LaTeXSnipper。
 
+### Windows
+
+使用 Windows x64 的 `.exe` 安装包。安装程序会在需要时下载 Microsoft Edge WebView2 Runtime。用 **Win+Shift+S** 截图，再回到 Lite 按 **Ctrl+V** 识别，也可以导入或拖入图片。
+
 > [!NOTE]
-> 识别模型不在安装包里。第一次识别时应用会提示下载所需模型（只用公式识别约 104 MB）。装过原版的电脑会直接沿用已有模型，无需再下载。
+第一次识别时应用会提示下载所需模型（只用公式识别约 104 MB）。在 macOS 上，Lite 可以使用原版已下载的模型。
 
 ## 快速上手
 
-1. 按 **⌘F**（或点「截图识别」），框选屏幕上的公式。
+1. 导入或粘贴公式图片。macOS 上也可以按 **⌘F**（或点「截图识别」）框选公式。
 2. 在弹出的确认窗口里检查、修改识别结果，点「确认并复制」。结果会复制到剪贴板，并记入左侧历史。
-3. 也可以把图片拖进窗口、在窗口里按 ⌘V 粘贴截图，或使用「图片识别」「PDF 识别」「手写识别」。
+3. 可以使用「PDF 识别」处理文档，或使用「手写识别」输入公式。
 
-关闭窗口后应用会留在后台，菜单栏的 Σ 图标可以随时截图识别或重新打开主窗口；按 ⌘Q 完全退出。
+关闭窗口后应用会留在后台。通过菜单栏或系统托盘图标重新打开主窗口，或从菜单中退出。
 
 ## 功能
 
@@ -45,9 +51,9 @@
 | **识别类型** | 公式 · 混合（文字 + 公式，输出 Markdown）· 纯文字 |
 | **识别引擎** | 内置 MathCraft，离线运行；也可接入任何 OpenAI 兼容接口（OpenAI、Ollama、LM Studio、vLLM 等） |
 | **编辑预览** | LaTeX 源码编辑，MathJax 实时渲染 |
-| **复制导出** | 复制为 LaTeX、`$…$`、`$$…$$`、`\[…\]`、equation、MathML；导出 TeX、Markdown、HTML、MathML、SVG、TXT，安装 Pandoc 后还可导出 Word、ODT |
-| **历史收藏** | 重命名、收藏、排序、删除，数据与原版互通 |
-| **界面** | 中文 / English，浅色 / 深色 / 跟随系统（在设置中点击即可预览），可自定义全局快捷键 |
+| **复制导出** | 复制为 LaTeX、`$…$`、`$$…$$`、`\[…\]`、equation、MathML；导出 TeX、Markdown、HTML、MathML、SVG、TXT，macOS 安装 Pandoc 后还可导出 Word、ODT |
+| **历史收藏** | 重命名、收藏、排序、删除，macOS 上与原版共用数据目录 |
+| **界面** | 中文 / English，浅色 / 深色 / 跟随系统（在设置中点击即可预览），macOS 上可自定义全局截图快捷键 |
 
 ## 识别模型
 
@@ -71,21 +77,21 @@
 多半是没有屏幕录制权限。在「系统设置 → 隐私与安全性 → 屏幕录制」中打开 LaTeXSnipper，然后退出并重新打开应用。
 
 **和原版 LaTeXSnipper 能同时用吗？**
-两者都叫 `LaTeXSnipper.app`，拖进「应用程序」会替换原版。数据目录 `~/Library/Application Support/LaTeXSnipper` 是共用的，所以历史、收藏和已下载的模型都会保留。
+Windows 上，Lite 可以单独安装，数据保存在 `%LOCALAPPDATA%\LaTeXSnipper Lite`。macOS 上，两者都叫 `LaTeXSnipper.app`，拖进「应用程序」会替换原版。两者共用 `~/Library/Application Support/LaTeXSnipper` 下的历史、收藏和模型。
 
 **怎么完全退出？**
-按 ⌘Q，或点菜单栏 Σ 图标中的「退出 LaTeXSnipper」。只关闭窗口时，应用仍在后台运行。
+在菜单栏或系统托盘中选择「退出 LaTeXSnipper」。macOS 上也可以按 ⌘Q。
 
 ## 与原版的区别
 
 | | 原版 LaTeXSnipper | LaTeXSnipper Lite |
 |---|---|---|
-| 平台 | Windows / Linux / macOS | 仅 macOS（Apple Silicon） |
+| 平台 | Windows / Linux / macOS | macOS（Apple Silicon）和 Windows（x64） |
 | 技术栈 | Python + PyQt6 + Qt WebEngine | Rust + Tauri 2 + 系统 WebView |
-| 安装包 | 552 MB，内置 Python、Qt、Chromium 和模型 | 12 MB，模型按需下载 |
+| 安装包 | 552 MB，内置 Python、Qt、Chromium 和模型 | 模型按需下载 |
 | 识别引擎 | Python + ONNX Runtime + OpenCV + RapidOCR | 用 Rust 重写，输出与原版逐字一致 |
 
-为了保持轻量，以下功能没有移植：Windows / Linux 版本、Office 插件（仅支持 Windows）、自动化 HTTP API、应用内更新、MinerU 文档解析。
+Lite 尚未移植 Linux 版本、Office 插件、自动化 HTTP API、应用内更新和 MinerU 文档解析。
 
 ## 参与开发
 
@@ -96,6 +102,8 @@ npm install
 npm run tauri dev     # 开发模式运行
 npm run dmg           # 构建 DMG，输出到 backend/target/release/bundle/dmg/
 ```
+
+在 Windows x64 上安装 Visual Studio C++ 生成工具和 Windows SDK 后，运行 `npm run tauri -- build --bundles nsis`。安装包输出到 `backend/target/release/bundle/nsis/`。
 
 <details>
 <summary><b>测试</b></summary>

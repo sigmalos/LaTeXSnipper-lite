@@ -6,13 +6,33 @@
 
 use latexsnipper_lib::commands::{model_status, Core};
 use latexsnipper_lib::ocr::Mode;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn fixtures() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
 
-/// A throwaway data dir whose `MathCraft/models` points at the real models.
+#[cfg(unix)]
+fn stage_models(source: &Path, target: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(source, target)
+}
+
+#[cfg(windows)]
+fn stage_models(source: &Path, target: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(target)?;
+    for entry in std::fs::read_dir(source)? {
+        let entry = entry?;
+        let destination = target.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            stage_models(&entry.path(), &destination)?;
+        } else {
+            std::fs::copy(entry.path(), destination)?;
+        }
+    }
+    Ok(())
+}
+
+/// A throwaway data dir containing the real models.
 fn core_with_models() -> Option<(tempfile::TempDir, Core)> {
     let models = std::env::var("LATEXSNIPPER_MODELS")
         .map(PathBuf::from)
@@ -26,7 +46,7 @@ fn core_with_models() -> Option<(tempfile::TempDir, Core)> {
     }
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("MathCraft")).unwrap();
-    std::os::unix::fs::symlink(&models, dir.path().join("MathCraft/models")).unwrap();
+    stage_models(&models, &dir.path().join("MathCraft/models")).unwrap();
     let core = Core::new(dir.path());
     Some((dir, core))
 }
@@ -145,7 +165,7 @@ fn models_downloaded_after_startup_are_used_without_restart() {
                 id,
                 |root, id, _| {
                     std::fs::create_dir_all(root)?;
-                    std::os::unix::fs::symlink(source.join(id), root.join(id))?;
+                    stage_models(&source.join(id), &root.join(id))?;
                     Ok(())
                 },
                 &mut |_| {},
@@ -178,9 +198,7 @@ fn deleting_a_model_takes_effect_without_restart() {
         );
         return;
     }
-    let Some((_dir, core)) = core_with_each_model_linked(&source) else {
-        return;
-    };
+    let (_dir, core) = core_with_each_model_staged(&source);
     let bytes = std::fs::read(fixtures().join("mixed.png")).unwrap();
     assert!(core.recognize_bytes(&bytes, Some(Mode::Mixed)).is_ok());
 
@@ -191,14 +209,14 @@ fn deleting_a_model_takes_effect_without_restart() {
     // Formula mode does not need the deleted model and keeps working.
     let formula = std::fs::read(fixtures().join("frac.png")).unwrap();
     assert!(core.recognize_bytes(&formula, Some(Mode::Formula)).is_ok());
-    // The real model files behind the link are intact.
+    // The source model files are intact.
     assert!(source
         .join("mathcraft-formula-det/mathcraft-mfd.onnx")
         .is_file());
 }
 
-/// A data dir whose model directories are individual symlinks into `source`.
-fn core_with_each_model_linked(source: &std::path::Path) -> Option<(tempfile::TempDir, Core)> {
+/// Stage model directories individually so the app can remove them.
+fn core_with_each_model_staged(source: &Path) -> (tempfile::TempDir, Core) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("MathCraft/models");
     std::fs::create_dir_all(&root).unwrap();
@@ -208,8 +226,8 @@ fn core_with_each_model_linked(source: &std::path::Path) -> Option<(tempfile::Te
         "mathcraft-text-det",
         "mathcraft-text-rec",
     ] {
-        std::os::unix::fs::symlink(source.join(id), root.join(id)).unwrap();
+        stage_models(&source.join(id), &root.join(id)).unwrap();
     }
     let core = Core::new(dir.path());
-    Some((dir, core))
+    (dir, core)
 }

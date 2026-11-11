@@ -133,6 +133,7 @@
       models: modes(),
       model_files: modelsState().models,
       pandoc: !!seed.pandoc,
+      capture_supported: seed.capture_supported ?? true,
       selfcheck: false,
       data_dir: "/Users/demo/Library/Application Support/LaTeXSnipper",
     }),

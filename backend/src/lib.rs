@@ -8,7 +8,7 @@ pub mod store;
 use commands::Core;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{Emitter, RunEvent, WindowEvent};
+use tauri::{Emitter, WindowEvent};
 use tauri_plugin_global_shortcut::ShortcutState;
 
 /// `LATEXSNIPPER_HEADLESS=1`: start without a window, Dock icon, menu bar item
@@ -18,13 +18,23 @@ pub fn headless() -> bool {
     std::env::var("LATEXSNIPPER_HEADLESS").is_ok_and(|v| v == "1")
 }
 
-/// Shared with the legacy Qt app so history, favorites and models carry over.
+/// Local app data. On macOS, Lite uses the existing LaTeXSnipper directory.
 pub fn data_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var("LATEXSNIPPER_DATA_DIR") {
+    if let Some(dir) = std::env::var_os("LATEXSNIPPER_DATA_DIR") {
         return PathBuf::from(dir);
     }
-    let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
-    PathBuf::from(home).join("Library/Application Support/LaTeXSnipper")
+    #[cfg(target_os = "windows")]
+    {
+        std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir())
+            .join("LaTeXSnipper Lite")
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var_os("HOME").unwrap_or_else(|| ".".into());
+        PathBuf::from(home).join("Library/Application Support/LaTeXSnipper")
+    }
 }
 
 pub fn run() {
@@ -43,7 +53,7 @@ pub fn run() {
         )
         .manage(core.clone())
         .on_window_event(|window, event| {
-            // Closing the main window (red button, ⌘W) keeps the app running in the menu bar.
+            // Closing the main window keeps the app running in the tray.
             if let WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == shell::MAIN {
                     api.prevent_close();
@@ -54,6 +64,7 @@ pub fn run() {
         .setup(move |app| {
             if headless() {
                 // Keep the hidden window; no Dock icon, no focus change, no hotkey.
+                #[cfg(target_os = "macos")]
                 app.set_activation_policy(tauri::ActivationPolicy::Accessory);
                 return Ok(());
             }
@@ -94,14 +105,15 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building LaTeXSnipper")
-        .run(|app, event| {
+        .run(|_app, _event| {
             // Clicking the Dock icon (or relaunching the .app) brings the window back.
-            if let RunEvent::Reopen {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
                 has_visible_windows: false,
                 ..
-            } = event
+            } = _event
             {
-                shell::show_main(app);
+                shell::show_main(_app);
             }
         });
 }
