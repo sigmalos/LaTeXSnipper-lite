@@ -1,3 +1,6 @@
+> [!IMPORTANT]
+> **当前版本的 Windows 和 Linux 版无法进行截图识别**，「截图识别」按钮和全局快捷键只在 macOS 上提供。Windows 和 Linux 版可以识别图片文件、拖入或粘贴的截图、PDF 和手写。
+
 ## 下载
 
 | 系统 | 文件 |
@@ -8,8 +11,8 @@
 | Linux x64（其他发行版） | `LaTeXSnipper-Lite_{{VERSION}}_linux-x86_64.AppImage` |
 
 - **macOS**：安装包未经 Apple 公证，首次打开若提示无法验证，请在「系统设置 → 隐私与安全性」底部点「仍要打开」。
-- **Windows**：安装包未签名，SmartScreen 提示时点「更多信息 → 仍要运行」。
-- **截图识别**目前仅支持 macOS；Windows 和 Linux 版可以识别图片文件、拖入或粘贴的截图、PDF 和手写。
+- **Windows**：安装包未签名，SmartScreen 提示时点「更多信息 → 仍要运行」。安装无需管理员权限；缺少 Microsoft Edge WebView2 Runtime 时安装程序会自动下载。应用以「LaTeXSnipper Lite」的名字单独安装，可与原版同时使用，数据保存在 `%LOCALAPPDATA%\LaTeXSnipper Lite`。
+- **Windows 上代替截图识别**：先用系统自带的 **Win + Shift + S** 截图，再回到应用按 **Ctrl + V** 粘贴识别。
 - 识别模型在第一次识别时按需下载，并逐文件校验 SHA-256。
 
 校验文件完整性：`sha256sum -c SHA256SUMS.txt`（macOS 用 `shasum -a 256 -c SHA256SUMS.txt`）。
