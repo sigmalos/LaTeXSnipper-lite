@@ -77,12 +77,14 @@ export interface TourText {
 
 export class SpotlightTour {
   private index = 0;
+  private steps: TourStep[] = [];
   private root: HTMLElement | null = null;
   private returnFocus: Element | null = null;
   private onResize = () => this.layout();
 
   constructor(
-    private readonly steps: TourStep[],
+    /** Read on every start, so the steps can depend on what this build supports. */
+    private readonly stepsFor: TourStep[] | (() => TourStep[]),
     private readonly text: () => TourText,
     /** `completed` is true when the last step was confirmed, false when skipped. */
     private readonly onEnd: (completed: boolean) => void,
@@ -97,6 +99,8 @@ export class SpotlightTour {
   }
 
   start(): void {
+    this.steps = typeof this.stepsFor === "function" ? this.stepsFor() : this.stepsFor;
+    if (!this.steps.length) return;
     if (this.root) return this.go(0);
     this.returnFocus = document.activeElement;
     this.root = this.build();

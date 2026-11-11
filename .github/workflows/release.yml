@@ -1,0 +1,136 @@
+name: Release
+
+# Push a tag like v1.2.3 to build, smoke-test and publish all three platforms.
+# Run it by hand ("Run workflow") for a dry run: same builds and tests, results
+# kept as workflow artifacts, nothing published.
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        name: Tag matches package.json, Cargo.toml and tauri.conf.json
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then v=$(node scripts/check-version.mjs "$GITHUB_REF_NAME"); else v=$(node scripts/check-version.mjs); fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.platform }}
+    needs: version
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { platform: macos, os: macos-latest }
+          - { platform: linux, os: ubuntu-22.04 } # oldest supported glibc, for compatibility
+          - { platform: windows, os: windows-latest }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      BUNDLE: backend/target/release/bundle
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: release
+      - run: npm ci
+
+      - name: Build installers
+        shell: bash
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
+        run: npx tauri build
+
+      - uses: ./.github/actions/models
+
+      - name: Smoke-test the DMG
+        if: matrix.platform == 'macos'
+        run: scripts/smoke-dmg.sh --require-models
+
+      - name: Smoke-test the .deb and the AppImage
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get install -yq "./$(ls $BUNDLE/deb/*.deb)"
+          bin=$(dpkg -L latexsnipper-lite | grep '^/usr/bin/' | head -1)
+          echo "installed $bin"; scripts/smoke.sh "$bin" --require-models
+          appimage=$(ls $BUNDLE/appimage/*.AppImage)
+          chmod +x "$appimage"
+          APPIMAGE_EXTRACT_AND_RUN=1 scripts/smoke.sh "$appimage" --require-models
+
+      - name: Smoke-test the installer
+        if: matrix.platform == 'windows'
+        shell: bash
+        run: |
+          setup=$(ls $BUNDLE/nsis/*-setup.exe)
+          "$setup" /S
+          dir="$LOCALAPPDATA/LaTeXSnipper Lite"
+          ls "$dir"
+          bin=$(ls "$dir"/*.exe | grep -vi uninstall | head -1)
+          echo "installed $bin"; scripts/smoke.sh "$bin" --require-models
+
+      - name: Name the installers
+        shell: bash
+        run: |
+          mkdir out
+          case "${{ matrix.platform }}" in
+            macos) cp $BUNDLE/dmg/*.dmg "out/LaTeXSnipper-Lite_${VERSION}_macos-arm64.dmg" ;;
+            linux) cp $BUNDLE/deb/*.deb "out/latexsnipper-lite_${VERSION}_amd64.deb"
+                   cp $BUNDLE/appimage/*.AppImage "out/LaTeXSnipper-Lite_${VERSION}_linux-x86_64.AppImage" ;;
+            windows) cp $BUNDLE/nsis/*-setup.exe "out/LaTeXSnipper-Lite_${VERSION}_windows-x64-setup.exe" ;;
+          esac
+          ls -l out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.platform }}
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub release
+    if: github.ref_type == 'tag'
+    needs: [version, build]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: out
+          merge-multiple: true
+      - name: Checksums
+        working-directory: out
+        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
+      - name: Create the release (all platforms at once)
+        run: |
+          sed "s/{{VERSION}}/$VERSION/g" .github/release-notes.md > notes.md
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release upload "$GITHUB_REF_NAME" out/* --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" out/* --verify-tag \
+              --title "LaTeXSnipper Lite $VERSION" --notes-file notes.md --generate-notes
+          fi

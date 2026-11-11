@@ -1,0 +1,25 @@
+name: MathCraft models
+description: >
+  Restore the four MathCraft models from the cache, or download them with the
+  app's own downloader (which verifies every file's SHA-256). Exports
+  LATEXSNIPPER_MODELS for the real-model tests and smoke tests.
+runs:
+  using: composite
+  steps:
+    - id: cache
+      uses: actions/cache@v4
+      with:
+        path: .ci-models
+        key: mathcraft-models-${{ hashFiles('backend/resources/models.json') }}
+        enableCrossOsArchive: true
+
+    - name: Download models
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        for id in mathcraft-formula-det mathcraft-formula-rec mathcraft-text-det mathcraft-text-rec; do
+          cargo run --quiet --manifest-path backend/Cargo.toml --example download -- .ci-models "$id" | tail -1
+        done
+
+    - shell: bash
+      run: echo "LATEXSNIPPER_MODELS=${{ github.workspace }}/.ci-models/MathCraft/models" >> "$GITHUB_ENV"

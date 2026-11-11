@@ -77,10 +77,20 @@ pub struct RecognizeResult {
 }
 
 pub fn pandoc_path() -> Option<PathBuf> {
-    ["/opt/homebrew/bin/pandoc", "/usr/local/bin/pandoc"]
-        .iter()
-        .map(PathBuf::from)
-        .find(|p| p.is_file())
+    let exe = if cfg!(windows) {
+        "pandoc.exe"
+    } else {
+        "pandoc"
+    };
+    let on_path = std::env::var_os("PATH")
+        .map(|p| {
+            std::env::split_paths(&p)
+                .map(|dir| dir.join(exe))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    let fixed = ["/opt/homebrew/bin/pandoc", "/usr/local/bin/pandoc"].map(PathBuf::from);
+    on_path.into_iter().chain(fixed).find(|p| p.is_file())
 }
 
 pub fn model_status(root: &Path) -> BTreeMap<&'static str, bool> {

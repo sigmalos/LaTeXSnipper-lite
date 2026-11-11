@@ -18,22 +18,38 @@ pub fn headless() -> bool {
     std::env::var("LATEXSNIPPER_HEADLESS").is_ok_and(|v| v == "1")
 }
 
-/// Local app data. On macOS, Lite uses the existing LaTeXSnipper directory.
+/// Local app data. On macOS, Lite uses the existing LaTeXSnipper directory;
+/// Windows and Linux get their own so they never touch the original app's data.
 pub fn data_dir() -> PathBuf {
-    if let Some(dir) = std::env::var_os("LATEXSNIPPER_DATA_DIR") {
+    data_dir_from(|key| std::env::var_os(key))
+}
+
+fn data_dir_from(env: impl Fn(&str) -> Option<std::ffi::OsString>) -> PathBuf {
+    if let Some(dir) = env("LATEXSNIPPER_DATA_DIR") {
         return PathBuf::from(dir);
     }
     #[cfg(target_os = "windows")]
     {
-        std::env::var_os("LOCALAPPDATA")
+        env("LOCALAPPDATA")
             .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::temp_dir())
+            .unwrap_or_else(std::env::temp_dir)
             .join("LaTeXSnipper Lite")
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-        let home = std::env::var_os("HOME").unwrap_or_else(|| ".".into());
+        let home = env("HOME").unwrap_or_else(|| ".".into());
         PathBuf::from(home).join("Library/Application Support/LaTeXSnipper")
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    {
+        // XDG Base Directory spec: $XDG_DATA_HOME, else ~/.local/share.
+        env("XDG_DATA_HOME")
+            .filter(|v| PathBuf::from(v).is_absolute())
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(env("HOME").unwrap_or_else(|| ".".into())).join(".local/share")
+            })
+            .join("latexsnipper-lite")
     }
 }
 
@@ -134,5 +150,64 @@ pub fn selftest(image: Option<&str>) -> i32 {
             eprintln!("selftest failed: {e:#}");
             1
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::data_dir_from;
+    use std::ffi::OsString;
+    use std::path::PathBuf;
+
+    fn env<'a>(vars: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<OsString> + 'a {
+        move |key| {
+            vars.iter()
+                .find(|(k, _)| *k == key)
+                .map(|(_, v)| OsString::from(v))
+        }
+    }
+
+    #[test]
+    fn override_wins_everywhere() {
+        assert_eq!(
+            data_dir_from(env(&[("LATEXSNIPPER_DATA_DIR", "/tmp/x"), ("HOME", "/h")])),
+            PathBuf::from("/tmp/x")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_shares_the_original_apps_folder() {
+        assert_eq!(
+            data_dir_from(env(&[("HOME", "/Users/me")])),
+            PathBuf::from("/Users/me/Library/Application Support/LaTeXSnipper")
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_uses_local_app_data() {
+        assert_eq!(
+            data_dir_from(env(&[("LOCALAPPDATA", r"C:\Users\me\AppData\Local")])),
+            PathBuf::from(r"C:\Users\me\AppData\Local").join("LaTeXSnipper Lite")
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_follows_xdg() {
+        assert_eq!(
+            data_dir_from(env(&[("HOME", "/home/me")])),
+            PathBuf::from("/home/me/.local/share/latexsnipper-lite")
+        );
+        assert_eq!(
+            data_dir_from(env(&[("HOME", "/home/me"), ("XDG_DATA_HOME", "/data")])),
+            PathBuf::from("/data/latexsnipper-lite")
+        );
+        // Relative XDG values are invalid per the spec and ignored.
+        assert_eq!(
+            data_dir_from(env(&[("HOME", "/home/me"), ("XDG_DATA_HOME", "rel")])),
+            PathBuf::from("/home/me/.local/share/latexsnipper-lite")
+        );
     }
 }

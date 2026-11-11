@@ -144,10 +144,15 @@ pub fn handle<R: Runtime>(app: &AppHandle<R>, action: TrayAction) {
 }
 
 pub fn install_tray<R: Runtime>(app: &AppHandle<R>, s: &Settings) -> tauri::Result<()> {
+    // macOS tints a black template glyph to match the menu bar; Windows and Linux
+    // panels can be dark or light, so they get the full-colour app icon.
+    #[cfg(target_os = "macos")]
     let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?;
+    #[cfg(not(target_os = "macos"))]
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/32x32.png"))?;
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(icon)
-        .icon_as_template(true)
+        .icon_as_template(cfg!(target_os = "macos"))
         .tooltip(tooltip(s))
         .menu(&menu(app, s)?)
         .show_menu_on_left_click(true)

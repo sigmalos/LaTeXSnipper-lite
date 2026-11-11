@@ -157,12 +157,14 @@ h3 {
   flex-wrap: wrap;
 }
 
+/* Flex, not a 4-column grid: builds that hide 快捷键 share the row between three. */
 .side-tools {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
   gap: 4px;
 }
 .side-tools .btn {
+  flex: 1 1 0;
+  min-width: 0;
   flex-direction: column;
   gap: 2px;
   height: auto;

@@ -96,6 +96,10 @@ test.describe("recognition", () => {
     await open(page, { capture_supported: false, outcomes: [{ text: "x^{2}" }] });
     await expect(page.locator("#capture-btn")).toBeHidden();
     await expect(page.locator("#hotkey-btn")).toBeHidden();
+    // The remaining tools share the row with no empty slot.
+    const row = (await page.locator(".side-tools").boundingBox())!;
+    const last = (await page.locator("#settings-btn").boundingBox())!;
+    expect(row.x + row.width - (last.x + last.width)).toBeLessThan(1);
     await page.setInputFiles("#image-input", FIXTURE);
     await expect(page.locator("#result-text")).toHaveValue("x^{2}");
   });
@@ -817,6 +821,30 @@ test.describe("quick start spotlight tour", () => {
     await page.evaluate(() => (window as any).__mock.emit("open-settings", null));
     await expect(page.locator(".tour")).toHaveCount(0);
     await expect(page.locator("#settings-dialog")).toBeVisible();
+  });
+
+  test("without native capture it skips the capture step and macOS-only wording", async ({ page }) => {
+    // What a Windows build looks like: WebView2 reports Win32, and capture is off.
+    await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "Win32" }));
+    await open(page, { capture_supported: false, settings: { onboarding_done: false } });
+    await expect(page.locator(".tour-count")).toHaveText("1 / 6");
+    await expect(page.locator(".tour-title")).toHaveText("图片、PDF 与手写");
+    await expectSpotlight(page, "#image-btn", "#pdf-btn", "#handwriting-btn");
+    const titles: string[] = [];
+    const bodies: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      titles.push((await page.locator(".tour-title").textContent()) ?? "");
+      bodies.push((await page.locator(".tour-body").textContent()) ?? "");
+      if (i < 5) await page.click(".tour-next");
+    }
+    expect(titles).toEqual(["图片、PDF 与手写", "编辑与预览", "复制与导出", "历史记录", "收藏夹与设置", "后台运行"]);
+    const all = bodies.join(" ");
+    expect(all).not.toMatch(/⌘|截图快捷键|菜单栏/);
+    expect(bodies[0]).toContain("Ctrl+V");
+    expect(bodies[5]).toContain("系统托盘");
+    // The 5th step spotlights the visible tools only (快捷键 is hidden on this build).
+    await page.click(".tour-back");
+    await expectSpotlight(page, "#clear-history-btn", "#favorites-btn", "#settings-btn");
   });
 
   test("is translated and uses the configured shortcut", async ({ page }) => {

@@ -1019,7 +1019,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     targets: ["#image-btn", "#pdf-btn", "#handwriting-btn"],
     title: "图片、PDF 与手写",
-    body: "也可以识别图片文件、整份 PDF，或直接手写公式。把图片拖进窗口，或在窗口里按 ⌘V 粘贴也行。",
+    body: "也可以识别图片文件、整份 PDF，或直接手写公式。把图片拖进窗口，或在窗口里按 {paste} 粘贴也行。",
   },
   {
     targets: ["#editor", "#preview-paper"],
@@ -1048,13 +1048,35 @@ const TOUR_STEPS: TourStep[] = [
   },
 ];
 
+/**
+ * Builds without native capture (Windows, Linux) skip the capture step and get
+ * wording without a capture shortcut or the macOS menu bar.
+ */
+function tourSteps(): TourStep[] {
+  if (snap.capture_supported) return TOUR_STEPS;
+  return TOUR_STEPS.filter((s) => !s.targets.includes("#capture-btn")).map((s) => {
+    if (s.targets.includes(".side-tools")) {
+      return { ...s, title: "收藏夹与设置", body: "在这里打开收藏夹、清空历史。识别类型、模型下载、主题和语言都在“设置”里。" };
+    }
+    if (s.targets.includes("#onboarding-btn")) {
+      return {
+        ...s,
+        body: "关闭窗口后应用仍在后台运行，可以从系统托盘图标重新打开或退出。想再看一遍引导，点这个按钮。",
+      };
+    }
+    return s;
+  });
+}
+
+const isMac = /Mac/.test(navigator.platform);
+
 const tour = new SpotlightTour(
-  TOUR_STEPS,
+  tourSteps,
   () => {
     const hotkey = formatAccelerator(snap.settings.hotkey);
     return {
       title: (s) => t(s.title),
-      body: (s) => t(s.body, { hotkey }),
+      body: (s) => t(s.body, { hotkey, paste: isMac ? "⌘V" : "Ctrl+V" }),
       skip: t("跳过"),
       back: t("上一步"),
       next: t("下一步"),

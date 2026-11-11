@@ -125,8 +125,13 @@ const EN: Record<string, string> = {
   "跳过": "Skip",
   "按 {hotkey} 或点这里，框选屏幕上的公式。第一次使用时，macOS 会请求屏幕录制权限。":
     "Press {hotkey} or click here, then drag over a formula on screen. The first time, macOS asks for Screen Recording permission.",
-  "也可以识别图片文件、整份 PDF，或直接手写公式。把图片拖进窗口，或在窗口里按 ⌘V 粘贴也行。":
-    "You can also recognize image files, whole PDFs or handwriting. Dropping an image on the window or pasting with ⌘V works too.",
+  "也可以识别图片文件、整份 PDF，或直接手写公式。把图片拖进窗口，或在窗口里按 {paste} 粘贴也行。":
+    "You can also recognize image files, whole PDFs or handwriting. Dropping an image on the window or pasting with {paste} works too.",
+  "收藏夹与设置": "Favorites and settings",
+  "在这里打开收藏夹、清空历史。识别类型、模型下载、主题和语言都在“设置”里。":
+    "Open your favorites or clear the history here. Recognition type, model downloads, theme and language are in Settings.",
+  "关闭窗口后应用仍在后台运行，可以从系统托盘图标重新打开或退出。想再看一遍引导，点这个按钮。":
+    "Closing the window keeps the app running: reopen or quit it from the system tray icon. Click this button to see this tour again.",
   "编辑与预览": "Edit and preview",
   "识别结果会先在确认窗口里让你检查和修改，确认后填入这里。下方的方格纸实时渲染公式。":
     "Each result opens for review first; once you confirm, it lands here. The graph paper below renders it as you type.",

@@ -1,0 +1,28 @@
+{
+  "productName": "LaTeXSnipper Lite",
+  "identifier": "io.github.sakuramathcraft.latexsnipper.lite",
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "visible": false,
+        "title": "LaTeXSnipper Lite",
+        "width": 1160,
+        "height": 720,
+        "minWidth": 940,
+        "minHeight": 600,
+        "center": true,
+        "dragDropEnabled": true
+      }
+    ]
+  },
+  "bundle": {
+    "targets": ["deb", "appimage"],
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.png"],
+    "linux": {
+      "deb": {
+        "depends": ["libayatana-appindicator3-1"]
+      }
+    }
+  }
+}
