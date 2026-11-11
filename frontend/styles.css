@@ -681,6 +681,96 @@ input[type="radio"] {
 .external[hidden] {
   display: none;
 }
+.models-panel {
+  margin: 2px 0 6px 24px;
+  padding: 8px 0 6px 12px;
+  border-left: 2px solid var(--ink-wash);
+}
+.models-head {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.model-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.model-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 64px 112px 76px;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+}
+.model-row + .model-row {
+  border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+.model-name {
+  display: block;
+  color: var(--text);
+  font-size: 13px;
+}
+.model-use {
+  display: block;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.model-size {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.model-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.model-state::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--line);
+}
+.model-row.is-installed .model-state::before {
+  background: var(--ok);
+}
+.model-row.is-missing .model-state {
+  color: var(--muted);
+}
+.model-row.is-downloading .model-state {
+  color: var(--ink);
+}
+.model-row.is-downloading .model-state::before {
+  background: var(--ink);
+  animation: pulse 1s ease-in-out infinite;
+}
+.model-row.is-failed .model-state {
+  color: var(--danger);
+}
+.model-row.is-failed .model-state::before {
+  background: var(--danger);
+}
+.model-row .btn {
+  width: 100%;
+}
+.model-row progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+}
+
 .external .wide,
 .external .row {
   grid-column: 1 / -1;

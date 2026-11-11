@@ -135,6 +135,10 @@
         <fieldset>
           <legend data-i18n="识别后端">识别后端</legend>
           <label class="radio"><input type="radio" name="backend" value="builtin" /><span data-i18n="内置 MathCraft（离线）">内置 MathCraft（离线）</span></label>
+          <div class="models-panel" id="builtin-fields">
+            <div class="models-head"><span data-i18n="MathCraft 模型">MathCraft 模型</span><span id="models-count"></span></div>
+            <ul class="model-list" id="model-list"></ul>
+          </div>
           <label class="radio"><input type="radio" name="backend" value="external" /><span data-i18n="外部模型（OpenAI 兼容接口）">外部模型（OpenAI 兼容接口）</span></label>
           <div class="external" id="external-fields">
             <label><span data-i18n="接口地址">接口地址</span><input name="external_base_url" type="url" placeholder="http://localhost:11434/v1" /></label>

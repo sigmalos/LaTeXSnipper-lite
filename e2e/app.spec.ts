@@ -319,6 +319,114 @@ test.describe("settings", () => {
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 
+  test("built-in backend lists all four models with their download state", async ({ page }) => {
+    await open(page, { models: { formula: true, mixed: false, text: false } });
+    await page.click("#settings-btn");
+    const panel = page.locator("#builtin-fields");
+    await expect(panel).toBeVisible();
+    await expect(page.locator("#models-count")).toHaveText("已下载 1/4");
+    const rows = panel.locator(".model-row");
+    await expect(rows).toHaveCount(4);
+    await expect(rows.locator(".model-name")).toHaveText(["公式检测", "公式识别", "文字检测", "文字识别"]);
+    await expect(rows.locator(".model-use")).toHaveText(["用于：混合", "用于：公式、混合", "用于：混合、纯文字", "用于：混合、纯文字"]);
+    await expect(rows.locator(".model-size")).toHaveText(["64 MB", "104 MB", "4.3 MB", "13 MB"]);
+    await expect(rows.locator(".model-state")).toHaveText(["未下载", "已下载", "未下载", "未下载"]);
+    await expect(rows.locator("button")).toHaveText(["下载", "重新下载", "下载", "下载"]);
+  });
+
+  test("the model list follows the selected backend before saving", async ({ page }) => {
+    await open(page);
+    await page.click("#settings-btn");
+    const form = page.locator("#settings-form");
+    await form.getByText("外部模型（OpenAI 兼容接口）").click();
+    await expect(page.locator("#builtin-fields")).toBeHidden();
+    await expect(page.locator("#external-fields")).toBeVisible();
+    await form.getByText("内置 MathCraft（离线）").click();
+    await expect(page.locator("#builtin-fields")).toBeVisible();
+    await expect(page.locator("#external-fields")).toBeHidden();
+  });
+
+  test("the model list is hidden when an external model is configured", async ({ page }) => {
+    await open(page, { settings: { backend: "external", external_model: "qwen2.5vl:7b" } });
+    await page.click("#settings-btn");
+    await expect(page.locator("#builtin-fields")).toBeHidden();
+    await expect(page.locator("#external-fields")).toBeVisible();
+  });
+
+  test("downloads individual models on demand", async ({ page }) => {
+    await open(page, { models: { formula: true, mixed: false, text: false }, settings: { mode: "text" }, downloadDelay: 150 });
+    await expect(page.locator("#status")).toContainText("需下载模型");
+    await page.click("#settings-btn");
+    const row = (id: string) => page.locator(`.model-row[data-model="${id}"]`);
+
+    await row("mathcraft-text-det").locator("button").click();
+    await expect(row("mathcraft-text-det")).toHaveClass(/is-downloading/);
+    await expect(row("mathcraft-text-det").locator("button")).toBeDisabled();
+    await expect(row("mathcraft-text-det").locator(".model-state")).toHaveText(/下载中 \d+%/);
+    await expect(row("mathcraft-text-det").locator(".model-state")).toHaveText("已下载");
+    await expect(row("mathcraft-text-det").locator("button")).toHaveText("重新下载");
+    await expect(page.locator("#models-count")).toHaveText("已下载 2/4");
+    await expect(page.locator(".toast").last()).toContainText("文字检测 已下载");
+    await expect(page.locator("#status")).toContainText("需下载模型");
+
+    await row("mathcraft-text-rec").locator("button").click();
+    await expect(row("mathcraft-text-rec").locator(".model-state")).toHaveText("已下载");
+    await expect(page.locator("#status")).toContainText("状态: 就绪"); // text mode is now complete
+
+    const calls = await mock<{ cmd: string; args: { model: string } }[]>(page, "calls");
+    expect(calls.filter((c) => c.cmd === "download_model").map((c) => c.args.model)).toEqual([
+      "mathcraft-text-det",
+      "mathcraft-text-rec",
+    ]);
+  });
+
+  test("a failed download is shown on its row and can be retried", async ({ page }) => {
+    await open(page, { models: { formula: false, mixed: false, text: false }, failDownloads: ["mathcraft-formula-det"] });
+    await page.click("#settings-btn");
+    const row = page.locator('.model-row[data-model="mathcraft-formula-det"]');
+    await row.locator("button").click();
+    await expect(row.locator(".model-state")).toHaveText("下载失败");
+    await expect(row).toHaveClass(/is-failed/);
+    await expect(page.locator(".toast.error")).toContainText("下载失败：network unreachable");
+    await expect(row.locator("button")).toBeEnabled();
+    await row.locator("button").click();
+    await expect(row.locator(".model-state")).toHaveText("已下载");
+  });
+
+  test("a download keeps going after Settings closes and shows when reopened", async ({ page }) => {
+    await open(page, { models: { formula: false, mixed: false, text: false }, downloadDelay: 250 });
+    await page.click("#settings-btn");
+    const row = () => page.locator('.model-row[data-model="mathcraft-formula-rec"]');
+    await row().locator("button").click();
+    await expect(row()).toHaveClass(/is-downloading/);
+    await page.locator("#settings-form").getByText("取消", { exact: true }).click();
+    await page.click("#settings-btn");
+    await expect(row()).toHaveClass(/is-downloading/);
+    await expect(row().locator("button")).toBeDisabled();
+    await expect(row().locator(".model-state")).toHaveText("已下载", { timeout: 5000 });
+    await expect(page.locator("#status")).toContainText("状态: 就绪");
+  });
+
+  test("models fetched by the recognition prompt also update the list", async ({ page }) => {
+    await open(page, { models: { formula: false, mixed: false, text: false } });
+    await page.click("#capture-btn");
+    await page.click("#models-start");
+    await expect(page.locator("#models-dialog")).toBeHidden();
+    await page.click("#settings-btn");
+    await expect(page.locator('.model-row[data-model="mathcraft-formula-rec"] .model-state')).toHaveText("已下载");
+    await expect(page.locator("#models-count")).toHaveText("已下载 1/4");
+  });
+
+  test("model rows are translated", async ({ page }) => {
+    await open(page, { settings: { language: "en" }, models: { formula: true, mixed: false, text: false } });
+    await page.click("#settings-btn");
+    await expect(page.locator("#models-count")).toHaveText("1 of 4 downloaded");
+    const det = page.locator('.model-row[data-model="mathcraft-text-det"]');
+    await expect(det.locator(".model-name")).toHaveText("Text detection");
+    await expect(det.locator(".model-use")).toHaveText("Used by: Mixed, Text");
+    await expect(det.locator("button")).toHaveText("Download");
+  });
+
   test("external model fields appear and connection can be tested", async ({ page }) => {
     await open(page);
     await page.click("#settings-btn");

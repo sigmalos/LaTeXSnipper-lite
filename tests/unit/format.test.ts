@@ -16,6 +16,8 @@ import {
   escapeHtml,
   nativeTheme,
   resolveTheme,
+  formatBytes,
+  percentOf,
   type Entry,
 } from "../../frontend/lib/format";
 
@@ -167,5 +169,27 @@ describe("themes", () => {
     expect(nativeTheme("auto")).toBeNull();
     expect(nativeTheme("light")).toBe("light");
     expect(nativeTheme("dark")).toBe("dark");
+  });
+});
+
+describe("model downloads", () => {
+  it("formats download sizes", () => {
+    expect(formatBytes(67531517)).toBe("64 MB");
+    expect(formatBytes(108795631)).toBe("104 MB");
+    expect(formatBytes(4533780)).toBe("4.3 MB");
+    expect(formatBytes(14102746)).toBe("13 MB");
+    expect(formatBytes(2048)).toBe("2 KB");
+  });
+  it("computes progress, unknown when the size is missing", () => {
+    expect(percentOf(50, 200)).toBe(25);
+    expect(percentOf(199, 200)).toBe(99);
+    expect(percentOf(300, 200)).toBe(100);
+    expect(percentOf(10, 0)).toBeNull();
+  });
+  it("recognizes the in-progress error code", () => {
+    expect(errorCode("DOWNLOAD_IN_PROGRESS:mathcraft-text-det")).toEqual({
+      code: "DOWNLOAD_IN_PROGRESS",
+      detail: "mathcraft-text-det",
+    });
   });
 });

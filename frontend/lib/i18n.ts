@@ -128,6 +128,22 @@ const EN: Record<string, string> = {
     "You can also drop images, paste a screenshot (⌘V), recognize a whole PDF, or write a formula by hand.",
   "无法渲染：{error}": "Can’t render: {error}",
   "拖到这里识别": "Drop to recognize",
+  "MathCraft 模型": "MathCraft models",
+  "已下载 {n}/{total}": "{n} of {total} downloaded",
+  "公式检测": "Formula detection",
+  "公式识别": "Formula recognition",
+  "文字检测": "Text detection",
+  "文字识别": "Text recognition",
+  "用于：{modes}": "Used by: {modes}",
+  "已下载": "Downloaded",
+  "未下载": "Not downloaded",
+  "下载中…": "Downloading…",
+  "下载中 {percent}%": "Downloading {percent}%",
+  "下载失败": "Download failed",
+  "下载": "Download",
+  "重新下载": "Download again",
+  "{name} 已下载": "{name} downloaded",
+  "该模型正在下载": "This model is already downloading",
 };
 
 let current: Lang = "zh";

@@ -12,6 +12,15 @@ use std::path::Path;
 
 const MANIFEST: &str = include_str!("../resources/models.json");
 
+/// Every model the app knows, in display order, with its archive size
+/// (Content-Length of the v1.0.0 release asset) for the download button.
+pub const CATALOG: [(&str, u64); 4] = [
+    ("mathcraft-formula-det", 67_531_517),
+    ("mathcraft-formula-rec", 108_795_631),
+    ("mathcraft-text-det", 4_533_780),
+    ("mathcraft-text-rec", 14_102_746),
+];
+
 #[derive(Deserialize)]
 struct Manifest {
     models: BTreeMap<String, ModelSpec>,
@@ -181,6 +190,14 @@ mod tests {
             assert!(!s.files.is_empty() && s.sources[0].starts_with("https://"));
         }
         assert!(spec("nope").is_err());
+    }
+
+    #[test]
+    fn catalog_matches_manifest() {
+        for (id, bytes) in CATALOG {
+            assert!(spec(id).is_ok(), "{id} missing from manifest");
+            assert!(bytes > 1_000_000);
+        }
     }
 
     #[test]

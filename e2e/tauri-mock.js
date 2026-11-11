@@ -6,6 +6,19 @@
   const listeners = new Map(); // event -> [callbackId]
   let nextId = 1;
 
+  const ALL_MODELS = ["mathcraft-formula-det", "mathcraft-formula-rec", "mathcraft-text-det", "mathcraft-text-rec"];
+  const REQUIRED = {
+    formula: ["mathcraft-formula-rec"],
+    mixed: ALL_MODELS,
+    text: ["mathcraft-text-det", "mathcraft-text-rec"],
+  };
+  const SIZES = {
+    "mathcraft-formula-det": 67531517,
+    "mathcraft-formula-rec": 108795631,
+    "mathcraft-text-det": 4533780,
+    "mathcraft-text-rec": 14102746,
+  };
+
   const state = {
     settings: {
       mode: "formula",
@@ -25,7 +38,14 @@
     },
     history: seed.history || [],
     favorites: seed.favorites || [],
-    models: seed.models || { formula: true, mixed: true, text: true },
+    // Seeds may describe ready recognition types ({formula: true, ...}); derive the files.
+    installed: new Set(
+      seed.installedModels ??
+        (seed.models ? ALL_MODELS.filter((id) => Object.entries(seed.models).some(([m, on]) => on && REQUIRED[m].includes(id))) : ALL_MODELS),
+    ),
+    downloading: new Set(),
+    // ids whose next download fails once (or every download when downloadFails is true)
+    failOnce: new Set(seed.failDownloads || []),
     clipboard: "",
     hotkeySuspended: false,
     windowTheme: "unset",
@@ -36,6 +56,39 @@
     exported: [],
   };
   window.__mock = state;
+
+  function modes() {
+    const out = {};
+    for (const [m, ids] of Object.entries(REQUIRED)) out[m] = ids.every((id) => state.installed.has(id));
+    return out;
+  }
+  function modelsState() {
+    return {
+      models: ALL_MODELS.map((id) => ({
+        id,
+        installed: state.installed.has(id),
+        downloading: state.downloading.has(id),
+        download_bytes: SIZES[id],
+        used_by: Object.keys(REQUIRED).filter((m) => REQUIRED[m].includes(id)),
+      })),
+      modes: modes(),
+    };
+  }
+  async function downloadOne(id) {
+    if (state.downloading.has(id)) throw `DOWNLOAD_IN_PROGRESS:${id}`;
+    state.downloading.add(id);
+    try {
+      const total = SIZES[id];
+      for (let i = 1; i <= 4; i++) {
+        await new Promise((r) => setTimeout(r, seed.downloadDelay ?? 30));
+        emit("model-progress", { model: id, downloaded: Math.round((total * i) / 4), total });
+      }
+      if (seed.downloadFails || state.failOnce.delete(id)) throw "network unreachable";
+      state.installed.add(id);
+    } finally {
+      state.downloading.delete(id);
+    }
+  }
 
   const kindFor = (m) => (m === "formula" ? "mathcraft" : m === "mixed" ? "mathcraft_mixed" : "mathcraft_text");
 
@@ -48,7 +101,10 @@
     const o = state.outcomes.length ? state.outcomes.shift() : { text: "x^{2}" };
     if (o === null) return null;
     if (o.error) throw o.error;
-    if (!state.models[mode] && state.settings.backend === "builtin") throw "MODELS_MISSING:mathcraft-formula-rec";
+    if (state.settings.backend === "builtin") {
+      const missing = REQUIRED[mode].filter((id) => !state.installed.has(id));
+      if (missing.length) throw `MODELS_MISSING:${missing.join(",")}`;
+    }
     return { text: o.text, score: o.score ?? 0.97, mode, flags: o.flags || [], kind: kindFor(mode) };
   }
 
@@ -74,7 +130,8 @@
       settings: structuredClone(state.settings),
       history: structuredClone(state.history),
       favorites: structuredClone(state.favorites),
-      models: { ...state.models },
+      models: modes(),
+      model_files: modelsState().models,
       pandoc: !!seed.pandoc,
       data_dir: "/Users/demo/Library/Application Support/LaTeXSnipper",
     }),
@@ -90,13 +147,14 @@
     },
     recognize_file: ({ mode }) => nextOutcome(mode || state.settings.mode),
     download_models: async ({ mode }) => {
-      for (let i = 1; i <= 4; i++) {
-        emit("model-progress", { model: "mathcraft-formula-rec", downloaded: i * 25 * 1048576, total: 100 * 1048576 });
-        await new Promise((r) => setTimeout(r, 30));
-      }
-      if (seed.downloadFails) throw "network unreachable";
-      state.models = { formula: true, mixed: true, text: true };
-      return { ...state.models, [mode]: true };
+      for (const id of REQUIRED[mode]) if (!state.installed.has(id)) await downloadOne(id);
+      return modelsState();
+    },
+    list_models: () => modelsState(),
+    download_model: async ({ model }) => {
+      if (!SIZES[model]) throw `unknown model ${model}`;
+      await downloadOne(model);
+      return modelsState();
     },
     test_external: ({ settings }) => {
       if (!settings.external_model) throw "external model name is required";

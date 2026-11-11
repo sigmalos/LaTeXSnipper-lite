@@ -22,7 +22,16 @@
 
 ## 模型
 
-模型约 210 MB，不打进 DMG。首次使用某种识别类型时，应用会从 [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) 下载对应模型，并逐文件做 SHA-256 校验。只用公式识别时需要 112 MB。已经装过原版的机器无需下载。
+模型共四个，不打进 DMG，从 [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) 下载并逐文件做 SHA-256 校验：
+
+| 模型 | 用于 | 下载大小 |
+|---|---|---|
+| 公式检测 | 混合 | 64 MB |
+| 公式识别 | 公式、混合 | 104 MB |
+| 文字检测 | 混合、纯文字 | 4.3 MB |
+| 文字识别 | 混合、纯文字 | 13 MB |
+
+首次使用某种识别类型时会提示下载所需模型；也可以在“设置 → 识别后端 → 内置 MathCraft”中查看每个模型的状态，单独下载或重新下载。下载完成后立即可用，无需重启。已经装过原版的机器无需下载。
 
 ## 开发
 
@@ -37,7 +46,7 @@ npm run dmg                 # 生成 backend/target/release/bundle/dmg/*.dmg
 ## 测试
 
 ```sh
-npm run test:rust           # Rust 单元测试 + 真实模型对拍（无模型时自动跳过）
+npm run test:rust           # Rust 单元测试 + 真实模型对拍（无模型时自动跳过；LATEXSNIPPER_MODELS 可指定模型目录）
 npm test                    # 前端单元测试（Vitest）
 npm run test:e2e            # 界面 E2E（Playwright · WebKit，IPC 由 e2e/tauri-mock.js 模拟）
 ./scripts/smoke-dmg.sh      # 安装包 E2E：挂载 DMG、检查链接、无界面识别、启动 GUI

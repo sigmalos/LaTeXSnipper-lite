@@ -28,6 +28,7 @@ export interface Snapshot {
   history: Entry[];
   favorites: Entry[];
   models: Record<Mode, boolean>;
+  model_files: ModelInfo[];
   pandoc: boolean;
   data_dir: string;
 }
@@ -38,6 +39,19 @@ export interface Recognition {
   mode: Mode;
   flags: string[];
   kind: Kind;
+}
+
+export interface ModelInfo {
+  id: string;
+  installed: boolean;
+  downloading: boolean;
+  download_bytes: number;
+  used_by: Mode[];
+}
+
+export interface ModelsState {
+  models: ModelInfo[];
+  modes: Record<Mode, boolean>;
 }
 
 export interface Progress {
@@ -54,7 +68,9 @@ export const api = {
   recognizeImage: (data: string, mode?: Mode) => invoke<Recognition>("recognize_image", { data, mode }),
   recognizeFile: (path: string, mode?: Mode) => invoke<Recognition>("recognize_file", { path, mode }),
   capture: (mode?: Mode) => invoke<Recognition | null>("capture", { mode }),
-  downloadModels: (mode: Mode) => invoke<Record<Mode, boolean>>("download_models", { mode }),
+  downloadModels: (mode: Mode) => invoke<ModelsState>("download_models", { mode }),
+  listModels: () => invoke<ModelsState>("list_models"),
+  downloadModel: (model: string) => invoke<ModelsState>("download_model", { model }),
   testExternal: (settings: Settings) => invoke<string>("test_external", { settings }),
   exportFile: (path: string, content: string, format: string) => invoke<void>("export_file", { path, content, format }),
   history: (op: ListOp) => invoke<Entry[]>("history_op", op),

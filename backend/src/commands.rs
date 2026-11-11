@@ -8,15 +8,50 @@ use crate::store::{kind_for, Entry, Settings, Store};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine as _;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct Core {
     pub store: Mutex<Store>,
-    engine: OnceLock<Arc<Engine>>,
+    /// Rebuilt after a model download: sessions resolve model paths once.
+    engine: Mutex<Option<Arc<Engine>>>,
+    downloading: Mutex<HashSet<String>>,
+}
+
+/// One MathCraft model as shown in Settings.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct ModelInfo {
+    pub id: &'static str,
+    pub installed: bool,
+    pub downloading: bool,
+    pub download_bytes: u64,
+    /// Recognition types that need this model.
+    pub used_by: Vec<Mode>,
+}
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct ModelsState {
+    pub models: Vec<ModelInfo>,
+    /// Whether each recognition type has everything it needs.
+    pub modes: BTreeMap<&'static str, bool>,
+}
+
+/// Removes a model from the in-flight set when its download ends, however it ends.
+struct InFlight<'a> {
+    set: &'a Mutex<HashSet<String>>,
+    id: String,
+}
+
+impl Drop for InFlight<'_> {
+    fn drop(&mut self) {
+        self.set
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&self.id);
+    }
 }
 
 #[derive(Serialize, Debug)]
@@ -26,6 +61,7 @@ pub struct Snapshot {
     pub history: Vec<Entry>,
     pub favorites: Vec<Entry>,
     pub models: BTreeMap<&'static str, bool>,
+    pub model_files: Vec<ModelInfo>,
     pub pandoc: bool,
     pub data_dir: String,
 }
@@ -66,7 +102,8 @@ impl Core {
     pub fn new(dir: &Path) -> Self {
         Self {
             store: Mutex::new(Store::open(dir)),
-            engine: OnceLock::new(),
+            engine: Mutex::new(None),
+            downloading: Mutex::new(HashSet::new()),
         }
     }
 
@@ -77,11 +114,82 @@ impl Core {
     pub fn engine(&self) -> Arc<Engine> {
         let root = self.store().models_dir();
         self.engine
-            .get_or_init(|| Arc::new(Engine::new(&root)))
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_or_insert_with(|| Arc::new(Engine::new(&root)))
             .clone()
     }
 
+    /// Drop the cached engine so the next recognition sees newly installed models.
+    /// Recognitions already running keep their own `Arc`.
+    fn invalidate_engine(&self) {
+        *self.engine.lock().unwrap_or_else(|p| p.into_inner()) = None;
+    }
+
+    pub fn models_state(&self) -> ModelsState {
+        let root = self.store().models_dir();
+        let downloading = self
+            .downloading
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .clone();
+        let models = modelhub::CATALOG
+            .iter()
+            .map(|&(id, download_bytes)| ModelInfo {
+                id,
+                installed: modelhub::is_installed(&root, id),
+                downloading: downloading.contains(id),
+                download_bytes,
+                used_by: [Mode::Formula, Mode::Mixed, Mode::Text]
+                    .into_iter()
+                    .filter(|m| m.required_models().contains(&id))
+                    .collect(),
+            })
+            .collect();
+        ModelsState {
+            models,
+            modes: model_status(&root),
+        }
+    }
+
+    /// Download (or re-download) one model with `fetch`, which installs it under the root.
+    pub fn download_model_with(
+        &self,
+        id: &str,
+        fetch: impl FnOnce(&Path, &str, &mut dyn FnMut(Progress)) -> Result<()>,
+        on_progress: &mut dyn FnMut(Progress),
+    ) -> Result<ModelsState> {
+        if !modelhub::CATALOG.iter().any(|(known, _)| *known == id) {
+            bail!("unknown model {id}");
+        }
+        let guard = {
+            let mut set = self.downloading.lock().unwrap_or_else(|p| p.into_inner());
+            if !set.insert(id.to_string()) {
+                bail!("DOWNLOAD_IN_PROGRESS:{id}");
+            }
+            InFlight {
+                set: &self.downloading,
+                id: id.to_string(),
+            }
+        };
+        let root = self.store().models_dir();
+        let fetched = fetch(&root, id, on_progress);
+        drop(guard); // report the finished state, not "downloading"
+        fetched?;
+        self.invalidate_engine();
+        Ok(self.models_state())
+    }
+
+    pub fn download_model(
+        &self,
+        id: &str,
+        on_progress: &mut dyn FnMut(Progress),
+    ) -> Result<ModelsState> {
+        self.download_model_with(id, modelhub::download, on_progress)
+    }
+
     pub fn snapshot(&self) -> Snapshot {
+        let model_files = self.models_state().models;
         let s = self.store();
         Snapshot {
             version: env!("CARGO_PKG_VERSION"),
@@ -89,6 +197,7 @@ impl Core {
             history: s.history.clone(),
             favorites: s.favorites.clone(),
             models: model_status(&s.models_dir()),
+            model_files,
             pandoc: pandoc_path().is_some(),
             data_dir: s.dir().display().to_string(),
         }
@@ -140,14 +249,14 @@ impl Core {
         &self,
         mode: Mode,
         on_progress: &mut dyn FnMut(Progress),
-    ) -> Result<BTreeMap<&'static str, bool>> {
+    ) -> Result<ModelsState> {
         let root = self.store().models_dir();
         for id in mode.required_models() {
             if !modelhub::is_installed(&root, id) {
-                modelhub::download(&root, id, on_progress)?;
+                self.download_model(id, on_progress)?;
             }
         }
-        Ok(model_status(&root))
+        Ok(self.models_state())
     }
 }
 
@@ -306,9 +415,25 @@ pub async fn download_models(
     app: AppHandle,
     core: State<'_, Arc<Core>>,
     mode: Mode,
-) -> Res<BTreeMap<&'static str, bool>> {
+) -> Res<ModelsState> {
     let core = core.inner().clone();
     blocking(move || core.download_models(mode, &mut |p| drop(app.emit("model-progress", p)))).await
+}
+
+#[tauri::command]
+pub fn list_models(core: State<'_, Arc<Core>>) -> ModelsState {
+    core.models_state()
+}
+
+#[tauri::command]
+pub async fn download_model(
+    app: AppHandle,
+    core: State<'_, Arc<Core>>,
+    model: String,
+) -> Res<ModelsState> {
+    let core = core.inner().clone();
+    blocking(move || core.download_model(&model, &mut |p| drop(app.emit("model-progress", p))))
+        .await
 }
 
 #[tauri::command]
@@ -407,6 +532,101 @@ mod tests {
         let snap = core.snapshot();
         assert_eq!(snap.models.get("formula"), Some(&false));
         assert_eq!(snap.version, env!("CARGO_PKG_VERSION"));
+    }
+
+    fn install_fake(root: &Path, id: &str) {
+        let dir = root.join(id);
+        std::fs::create_dir_all(&dir).unwrap();
+        for f in modelhub::spec(id).unwrap().files {
+            std::fs::write(dir.join(f.path), b"x").unwrap();
+        }
+    }
+
+    #[test]
+    fn models_state_reports_presence_and_usage() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path());
+        install_fake(
+            &dir.path().join("MathCraft/models"),
+            "mathcraft-formula-rec",
+        );
+        let state = core.models_state();
+        let ids: Vec<&str> = state.models.iter().map(|m| m.id).collect();
+        assert_eq!(
+            ids,
+            [
+                "mathcraft-formula-det",
+                "mathcraft-formula-rec",
+                "mathcraft-text-det",
+                "mathcraft-text-rec"
+            ]
+        );
+        let by_id = |id: &str| state.models.iter().find(|m| m.id == id).unwrap().clone();
+        assert!(by_id("mathcraft-formula-rec").installed);
+        assert!(!by_id("mathcraft-text-det").installed);
+        assert_eq!(by_id("mathcraft-formula-det").used_by, [Mode::Mixed]);
+        assert_eq!(
+            by_id("mathcraft-formula-rec").used_by,
+            [Mode::Formula, Mode::Mixed]
+        );
+        assert_eq!(
+            by_id("mathcraft-text-rec").used_by,
+            [Mode::Mixed, Mode::Text]
+        );
+        assert_eq!(state.modes.get("formula"), Some(&true));
+        assert_eq!(state.modes.get("text"), Some(&false));
+        assert_eq!(core.snapshot().model_files, state.models);
+    }
+
+    #[test]
+    fn single_downloads_are_validated_and_exclusive() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path());
+        let mut progress = |_| {};
+        let err = core
+            .download_model_with("nope", |_, _, _| Ok(()), &mut progress)
+            .unwrap_err();
+        assert!(err.to_string().contains("unknown model"));
+
+        // A second request for a model that is still downloading is refused.
+        let state = core
+            .download_model_with(
+                "mathcraft-text-det",
+                |root, id, _| {
+                    assert!(core.models_state().models[2].downloading);
+                    let again = core.download_model_with(id, |_, _, _| Ok(()), &mut |_| {});
+                    assert_eq!(
+                        again.unwrap_err().to_string(),
+                        "DOWNLOAD_IN_PROGRESS:mathcraft-text-det"
+                    );
+                    install_fake(root, id);
+                    Ok(())
+                },
+                &mut progress,
+            )
+            .unwrap();
+        assert!(state.models[2].installed && !state.models[2].downloading);
+
+        // A failed download releases the model so it can be retried.
+        let failed = core.download_model_with(
+            "mathcraft-text-rec",
+            |_, _, _| Err(anyhow!("network unreachable")),
+            &mut progress,
+        );
+        assert!(failed.is_err());
+        assert!(!core.models_state().models[3].downloading);
+        assert!(
+            core.download_model_with(
+                "mathcraft-text-rec",
+                |r, id, _| {
+                    install_fake(r, id);
+                    Ok(())
+                },
+                &mut progress
+            )
+            .unwrap()
+            .modes["text"]
+        );
     }
 
     #[test]

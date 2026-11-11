@@ -197,9 +197,12 @@ export function debounce<A extends unknown[]>(fn: (...a: A) => void, ms: number)
 }
 
 /** Stable error codes from the backend → user-facing message keys. */
-export function errorCode(err: unknown): { code: "MODELS_MISSING" | "EMPTY_RESULT" | "HOTKEY_INVALID" | "OTHER"; detail: string } {
+export function errorCode(err: unknown): {
+  code: "MODELS_MISSING" | "EMPTY_RESULT" | "HOTKEY_INVALID" | "DOWNLOAD_IN_PROGRESS" | "OTHER";
+  detail: string;
+} {
   const msg = String((err as { message?: string })?.message ?? err);
-  for (const code of ["MODELS_MISSING", "EMPTY_RESULT", "HOTKEY_INVALID"] as const) {
+  for (const code of ["MODELS_MISSING", "EMPTY_RESULT", "HOTKEY_INVALID", "DOWNLOAD_IN_PROGRESS"] as const) {
     if (msg.startsWith(code)) return { code, detail: msg.slice(code.length + 1) };
   }
   return { code: "OTHER", detail: msg };
@@ -215,4 +218,17 @@ export function resolveTheme(theme: ThemeSetting, systemDark: boolean): "light" 
 /** Native window appearance: null hands control back to the system. */
 export function nativeTheme(theme: ThemeSetting): "light" | "dark" | null {
   return theme === "auto" ? null : theme;
+}
+
+/** Download sizes: one decimal below 10 MB, whole megabytes above. */
+export function formatBytes(bytes: number): string {
+  const mb = bytes / 1048576;
+  if (mb < 1) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return mb < 10 ? `${mb.toFixed(1)} MB` : `${Math.round(mb)} MB`;
+}
+
+/** Whole-number percentage, or null when the total size is unknown. */
+export function percentOf(done: number, total: number): number | null {
+  if (!total) return null;
+  return Math.min(100, Math.floor((done / total) * 100));
 }

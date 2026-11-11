@@ -109,3 +109,57 @@ fn recognition_then_history_roundtrip() {
         got.recognition.text
     );
 }
+
+/// The engine built at startup (warmup) must not keep "model not found"
+/// after the models are downloaded while the app is running.
+#[test]
+fn models_downloaded_after_startup_are_used_without_restart() {
+    let source = std::env::var("LATEXSNIPPER_MODELS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
+    if !model_status(&source).values().all(|v| *v) {
+        eprintln!(
+            "SKIP: MathCraft models not found under {}",
+            source.display()
+        );
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let core = Core::new(dir.path());
+    let _warm = core.engine(); // what the app does at launch, before any model exists
+    let bytes = std::fs::read(fixtures().join("mixed.png")).unwrap();
+    let missing = core.recognize_bytes(&bytes, Some(Mode::Mixed)).unwrap_err();
+    assert!(
+        missing.to_string().starts_with("MODELS_MISSING:"),
+        "{missing}"
+    );
+
+    for id in [
+        "mathcraft-formula-det",
+        "mathcraft-formula-rec",
+        "mathcraft-text-det",
+        "mathcraft-text-rec",
+    ] {
+        let state = core
+            .download_model_with(
+                id,
+                |root, id, _| {
+                    std::fs::create_dir_all(root)?;
+                    std::os::unix::fs::symlink(source.join(id), root.join(id))?;
+                    Ok(())
+                },
+                &mut |_| {},
+            )
+            .unwrap();
+        assert!(state.models.iter().find(|m| m.id == id).unwrap().installed);
+    }
+    let reference: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(fixtures().join("python_reference.json")).unwrap(),
+    )
+    .unwrap();
+    let got = core.recognize_bytes(&bytes, Some(Mode::Mixed)).unwrap();
+    assert_eq!(
+        got.recognition.text,
+        reference["mixed"]["text"].as_str().unwrap()
+    );
+}

@@ -67,6 +67,8 @@ pub fn run() {
             commands::recognize_file,
             commands::capture,
             commands::download_models,
+            commands::list_models,
+            commands::download_model,
             commands::test_external,
             commands::export_file,
             commands::history_op,

@@ -1,15 +1,17 @@
-import { api, type Recognition, type Settings, type Snapshot } from "./lib/api";
+import { api, type ModelInfo, type ModelsState, type Recognition, type Settings, type Snapshot } from "./lib/api";
 import {
   COPY_FORMATS,
   EXPORT_FORMATS,
   acceleratorFromEvent,
   debounce,
   errorCode,
+  formatBytes,
   formatAccelerator,
   joinPdfPages,
   nativeTheme,
   orderedEntries,
   parsePageRange,
+  percentOf,
   resolveTheme,
   toMarkdown,
   toTexDocument,
@@ -409,12 +411,13 @@ $("models-start").addEventListener("click", async () => {
     $("models-status").textContent = `${t("正在下载 {model}", { model: p.model })} · ${(p.downloaded / 1048576).toFixed(0)} MB`;
   });
   try {
-    snap.models = await api.downloadModels(downloadMode);
+    applyModels(await api.downloadModels(downloadMode));
     $("models-status").textContent = t("模型已就绪");
     toast(t("模型已就绪"));
     $<HTMLDialogElement>("models-dialog").close();
   } catch (e) {
     $("models-status").textContent = t("下载失败：{error}", { error: errorCode(e).detail });
+    api.listModels().then(applyModels).catch(() => undefined);
     start.disabled = false;
   } finally {
     stop();
@@ -489,13 +492,127 @@ async function exportAs(content: string, format: string, ext: string, label: str
   }
 }
 
+// ------------------------------------------------------------------ model files
+
+const MODEL_NAMES: [string, string][] = [
+  ["mathcraft-formula-det", "公式检测"],
+  ["mathcraft-formula-rec", "公式识别"],
+  ["mathcraft-text-det", "文字检测"],
+  ["mathcraft-text-rec", "文字识别"],
+];
+const modelName = (id: string) => t(MODEL_NAMES.find(([key]) => key === id)?.[1] ?? id);
+
+type RowState = { downloading: boolean; done: number; total: number; failed: string | null };
+const rowStates = new Map<string, RowState>();
+/** Single-model downloads this window started and is still awaiting. */
+const pendingDownloads = new Set<string>();
+
+function rowState(m: ModelInfo): RowState {
+  let s = rowStates.get(m.id);
+  if (!s) rowStates.set(m.id, (s = { downloading: m.downloading, done: 0, total: m.download_bytes, failed: null }));
+  return s;
+}
+
+function applyModels(state: ModelsState): void {
+  snap.models = state.modes;
+  snap.model_files = state.models;
+  // The backend is the source of truth for what is installed and in flight.
+  for (const m of state.models) {
+    const s = rowStates.get(m.id);
+    if (s) s.downloading = pendingDownloads.has(m.id) || m.downloading;
+  }
+  renderStatus();
+  renderModelList();
+}
+
+function renderModelRow(li: HTMLLIElement, m: ModelInfo): void {
+  const s = rowState(m);
+  const pct = percentOf(s.done, s.total);
+  const stateText = s.downloading
+    ? pct === null
+      ? t("下载中…")
+      : t("下载中 {percent}%", { percent: pct })
+    : s.failed
+      ? t("下载失败")
+      : t(m.installed ? "已下载" : "未下载");
+  li.className = `model-row ${s.downloading ? "is-downloading" : s.failed ? "is-failed" : m.installed ? "is-installed" : "is-missing"}`;
+  li.querySelector(".model-state")!.textContent = stateText;
+  li.querySelector<HTMLElement>(".model-state")!.title = s.failed ?? "";
+  const btn = li.querySelector<HTMLButtonElement>("button")!;
+  btn.textContent = t(m.installed ? "重新下载" : "下载");
+  btn.className = m.installed ? "btn quiet small" : "btn small";
+  btn.disabled = s.downloading;
+  const bar = li.querySelector<HTMLProgressElement>("progress")!;
+  bar.hidden = !s.downloading;
+  if (pct === null) bar.removeAttribute("value");
+  else bar.value = pct;
+}
+
+function renderModelList(): void {
+  const list = $("model-list");
+  const models = snap.model_files ?? [];
+  $("models-count").textContent = t("已下载 {n}/{total}", {
+    n: models.filter((m) => m.installed).length,
+    total: models.length,
+  });
+  list.replaceChildren(
+    ...models.map((m) => {
+      const li = document.createElement("li");
+      li.dataset.model = m.id;
+      li.title = m.id;
+      const uses = m.used_by.map(modeLabel).join(getLang() === "zh" ? "、" : ", ");
+      li.innerHTML = `<div><span class="model-name"></span><span class="model-use"></span></div>
+        <span class="model-size"></span><span class="model-state" aria-live="polite"></span>
+        <button type="button"></button><progress max="100"></progress>`;
+      li.querySelector(".model-name")!.textContent = modelName(m.id);
+      li.querySelector(".model-use")!.textContent = t("用于：{modes}", { modes: uses });
+      li.querySelector(".model-size")!.textContent = formatBytes(m.download_bytes);
+      li.querySelector("button")!.addEventListener("click", () => downloadOne(m.id));
+      renderModelRow(li, m);
+      return li;
+    }),
+  );
+}
+
+function refreshModelRow(id: string): void {
+  const m = snap.model_files?.find((x) => x.id === id);
+  const li = $("model-list").querySelector<HTMLLIElement>(`li[data-model="${id}"]`);
+  if (m && li) renderModelRow(li, m);
+}
+
+async function downloadOne(id: string): Promise<void> {
+  const m = snap.model_files.find((x) => x.id === id);
+  if (!m) return;
+  const s = rowState(m);
+  if (s.downloading) return;
+  Object.assign(s, { downloading: true, done: 0, total: m.download_bytes, failed: null });
+  pendingDownloads.add(id);
+  refreshModelRow(id);
+  try {
+    const state = await api.downloadModel(id);
+    pendingDownloads.delete(id);
+    applyModels(state);
+    toast(t("{name} 已下载", { name: modelName(id) }));
+  } catch (e) {
+    pendingDownloads.delete(id);
+    const { code, detail } = errorCode(e);
+    s.downloading = code === "DOWNLOAD_IN_PROGRESS"; // already running elsewhere: keep showing it
+    s.failed = code === "DOWNLOAD_IN_PROGRESS" ? null : detail;
+    refreshModelRow(id);
+    toast(code === "DOWNLOAD_IN_PROGRESS" ? t("该模型正在下载") : t("下载失败：{error}", { error: detail }), code !== "DOWNLOAD_IN_PROGRESS");
+  }
+}
+
 // ------------------------------------------------------------------ settings
 
 const form = $<HTMLFormElement>("settings-form");
 const field = <T extends HTMLElement>(name: string) => form.elements.namedItem(name) as unknown as T;
 
-function syncExternalVisibility(): void {
-  $("external-fields").hidden = (form.querySelector<HTMLInputElement>("input[name=backend]:checked")?.value ?? "builtin") !== "external";
+/** Show the fields for the backend that is selected right now (before saving). */
+function syncBackendVisibility(): void {
+  const external = (form.querySelector<HTMLInputElement>("input[name=backend]:checked")?.value ?? "builtin") === "external";
+  $("external-fields").hidden = !external;
+  $("builtin-fields").hidden = external;
 }
 
 function readSettingsForm(): Settings {
@@ -529,7 +646,10 @@ function openSettings(): void {
   $<HTMLInputElement>("data-dir").value = snap.data_dir;
   $("version").textContent = `LaTeXSnipper ${snap.version}`;
   $("test-result").textContent = "";
-  syncExternalVisibility();
+  renderModelList();
+  // Pick up files added or removed outside the app since the last look.
+  api.listModels().then(applyModels).catch(() => undefined);
+  syncBackendVisibility();
   dlg.returnValue = "";
   dlg.showModal();
 }
@@ -537,7 +657,7 @@ function openSettings(): void {
 $("settings-btn").addEventListener("click", openSettings);
 
 form.addEventListener("change", (e) => {
-  syncExternalVisibility();
+  syncBackendVisibility();
   // Preview the theme on click; Save keeps it, Cancel/Esc restores the saved one.
   const target = e.target as HTMLInputElement;
   if (target.name === "theme" && target.checked) applyTheme(target.value as Settings["theme"]);
@@ -901,6 +1021,14 @@ async function boot(): Promise<void> {
   if (last) loadIntoEditor(last.text, last.kind);
   await api.onHotkey(capture);
   await api.onOpenSettings(openSettings);
+  await api.onProgress((p) => {
+    const s = rowStates.get(p.model);
+    if (!s) return;
+    s.downloading = true;
+    s.done = p.downloaded;
+    if (p.total) s.total = p.total;
+    refreshModelRow(p.model);
+  });
   await api
     .onDrop(
       (paths) => {
