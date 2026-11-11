@@ -24,7 +24,7 @@ jobs:
     outputs:
       version: ${{ steps.check.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - id: check
         name: Tag matches package.json, Cargo.toml and tauri.conf.json
         run: |
@@ -47,7 +47,7 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
       BUNDLE: backend/target/release/bundle
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
           cache-key: release
@@ -63,26 +63,42 @@ jobs:
 
       - name: Smoke-test the DMG
         if: matrix.platform == 'macos'
+        timeout-minutes: 10
         run: scripts/smoke-dmg.sh --require-models
 
       - name: Smoke-test the .deb and the AppImage
         if: matrix.platform == 'linux'
+        timeout-minutes: 10
         run: |
-          sudo apt-get install -yq "./$(ls $BUNDLE/deb/*.deb)"
-          bin=$(dpkg -L latexsnipper-lite | grep '^/usr/bin/' | head -1)
-          echo "installed $bin"; scripts/smoke.sh "$bin" --require-models
+          deb=$(ls $BUNDLE/deb/*.deb)
+          # Tauri derives the package name from productName; read it from the .deb.
+          pkg=$(dpkg-deb -f "$deb" Package)
+          sudo apt-get install -yq "./$deb"
+          bin=$(dpkg -L "$pkg" | grep '^/usr/bin/' | head -1)
+          [ -x "$bin" ] || { echo "no executable installed by $pkg"; dpkg -L "$pkg"; exit 1; }
+          echo "installed $pkg: $bin"; scripts/smoke.sh "$bin" --require-models
           appimage=$(ls $BUNDLE/appimage/*.AppImage)
           chmod +x "$appimage"
           APPIMAGE_EXTRACT_AND_RUN=1 scripts/smoke.sh "$appimage" --require-models
 
-      - name: Smoke-test the installer
+      # PowerShell, not Git Bash: MSYS rewrites "/S" to "S:/", which drops the
+      # silent flag and leaves the installer's window waiting for a click.
+      - name: Install with the NSIS installer (silent)
         if: matrix.platform == 'windows'
+        timeout-minutes: 5
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem "$env:BUNDLE/nsis/*-setup.exe" | Select-Object -First 1
+          $p = Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installer exited with $($p.ExitCode)" }
+          Get-ChildItem "$env:LOCALAPPDATA/LaTeXSnipper Lite"
+
+      - name: Smoke-test the installed app
+        if: matrix.platform == 'windows'
+        timeout-minutes: 10
         shell: bash
         run: |
-          setup=$(ls $BUNDLE/nsis/*-setup.exe)
-          "$setup" /S
           dir="$LOCALAPPDATA/LaTeXSnipper Lite"
-          ls "$dir"
           bin=$(ls "$dir"/*.exe | grep -vi uninstall | head -1)
           echo "installed $bin"; scripts/smoke.sh "$bin" --require-models
 
@@ -98,7 +114,7 @@ jobs:
           esac
           ls -l out
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: installer-${{ matrix.platform }}
           path: out/*
@@ -116,8 +132,8 @@ jobs:
       VERSION: ${{ needs.version.outputs.version }}
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: installer-*
           path: out
