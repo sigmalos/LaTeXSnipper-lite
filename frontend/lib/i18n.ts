@@ -31,6 +31,8 @@ const EN: Record<string, string> = {
   "纯文字": "Text",
   "还没有识别记录。按 {hotkey} 截图识别，或把图片拖到窗口里。":
     "No recognitions yet. Press {hotkey} to capture, or drop an image on the window.",
+  "还没有识别记录。拖入图片或粘贴截图即可识别。":
+    "No recognitions yet. Drop an image or paste a screenshot to recognize it.",
   "收藏夹是空的。在历史记录的菜单里选择“收藏”。": "No favorites yet. Choose “Favorite” from a history item’s menu.",
   "已复制": "Copied",
   "已复制 {format}": "Copied {format}",
@@ -124,8 +126,8 @@ const EN: Record<string, string> = {
   "识别结果会先显示在确认窗口里，可以修改。确认后复制到剪贴板，并记入历史。":
     "The result opens for review so you can fix it. Confirming copies it and adds it to History.",
   "图片、PDF 与手写": "Images, PDFs and handwriting",
-  "也可以拖入图片、粘贴截图（⌘V）、识别整份 PDF，或直接手写公式。":
-    "You can also drop images, paste a screenshot (⌘V), recognize a whole PDF, or write a formula by hand.",
+  "可以拖入图片、粘贴截图、识别整份 PDF，或直接手写公式。":
+    "Drop images, paste a screenshot, recognize a whole PDF, or write a formula by hand.",
   "无法渲染：{error}": "Can’t render: {error}",
   "拖到这里识别": "Drop to recognize",
   "MathCraft 模型": "MathCraft models",

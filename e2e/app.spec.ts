@@ -92,6 +92,14 @@ test.describe("recognition", () => {
     expect(call.args.mode).toBe("formula");
   });
 
+  test("image OCR stays available without native screen capture", async ({ page }) => {
+    await open(page, { capture_supported: false, outcomes: [{ text: "x^{2}" }] });
+    await expect(page.locator("#capture-btn")).toBeHidden();
+    await expect(page.locator("#hotkey-btn")).toBeHidden();
+    await page.setInputFiles("#image-input", FIXTURE);
+    await expect(page.locator("#result-text")).toHaveValue("x^{2}");
+  });
+
   test("empty and failing recognitions show actionable messages", async ({ page }) => {
     await open(page, { outcomes: [{ error: "EMPTY_RESULT" }, { error: "decoder crashed" }] });
     await page.click("#capture-btn");

@@ -63,6 +63,7 @@ pub struct Snapshot {
     pub models: BTreeMap<&'static str, bool>,
     pub model_files: Vec<ModelInfo>,
     pub pandoc: bool,
+    pub capture_supported: bool,
     /// Headless self-check run (smoke test): the UI reports back and the app exits.
     pub selfcheck: bool,
     pub data_dir: String,
@@ -225,6 +226,7 @@ impl Core {
             model_files,
             selfcheck: crate::headless(),
             pandoc: pandoc_path().is_some(),
+            capture_supported: crate::shell::CAPTURE_SUPPORTED,
             data_dir: s.dir().display().to_string(),
         }
     }
@@ -412,6 +414,9 @@ pub async fn capture(
     core: State<'_, Arc<Core>>,
     mode: Option<Mode>,
 ) -> Res<Option<RecognizeResult>> {
+    if !crate::shell::CAPTURE_SUPPORTED {
+        return Err("Screen capture is unavailable on this platform".into());
+    }
     let window = app.get_webview_window(crate::shell::MAIN);
     let was_visible = window
         .as_ref()

@@ -30,6 +30,7 @@ export interface Snapshot {
   models: Record<Mode, boolean>;
   model_files: ModelInfo[];
   pandoc: boolean;
+  capture_supported: boolean;
   selfcheck: boolean;
   data_dir: string;
 }

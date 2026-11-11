@@ -1,6 +1,4 @@
-//! macOS shell integration: menu bar item, background running and the global
-//! capture hotkey. Closing the window only hides it; the app keeps running in
-//! the menu bar until the user quits (⌘Q or the menu item).
+//! Tray integration, background running, and the macOS capture hotkey.
 
 use crate::store::Settings;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
@@ -10,6 +8,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 pub const TRAY_ID: &str = "latexsnipper";
 pub const MAIN: &str = "main";
+pub const CAPTURE_SUPPORTED: bool = cfg!(target_os = "macos");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TrayAction {
@@ -73,6 +72,9 @@ pub fn display_hotkey(accelerator: &str) -> String {
 }
 
 pub fn tooltip(s: &Settings) -> String {
+    if !CAPTURE_SUPPORTED {
+        return "LaTeXSnipper Lite".into();
+    }
     format!(
         "LaTeXSnipper · {} {}",
         TrayAction::Capture.label(&s.language),
@@ -81,6 +83,9 @@ pub fn tooltip(s: &Settings) -> String {
 }
 
 pub fn register_hotkey<R: Runtime>(app: &AppHandle<R>, accelerator: &str) -> anyhow::Result<()> {
+    if !CAPTURE_SUPPORTED {
+        return Ok(());
+    }
     let shortcut: Shortcut = accelerator.parse().map_err(|e| anyhow::anyhow!("{e}"))?;
     let gs = app.global_shortcut();
     gs.unregister_all()?;
@@ -109,17 +114,20 @@ fn menu<R: Runtime>(app: &AppHandle<R>, s: &Settings) -> tauri::Result<Menu<R>> 
         MenuItem::with_id(app, a.id(), a.label(lang), true, accel)
             .or_else(|_| MenuItem::with_id(app, a.id(), a.label(lang), true, None::<&str>))
     };
-    Menu::with_items(
+    let menu = Menu::with_items(
         app,
         &[
-            &item(TrayAction::Capture, Some(&s.hotkey))?,
             &item(TrayAction::Open, None)?,
             &PredefinedMenuItem::separator(app)?,
             &item(TrayAction::Settings, Some("CommandOrControl+,"))?,
             &PredefinedMenuItem::separator(app)?,
             &item(TrayAction::Quit, Some("CommandOrControl+Q"))?,
         ],
-    )
+    )?;
+    if CAPTURE_SUPPORTED {
+        menu.insert(&item(TrayAction::Capture, Some(&s.hotkey))?, 0)?;
+    }
+    Ok(menu)
 }
 
 pub fn handle<R: Runtime>(app: &AppHandle<R>, action: TrayAction) {
@@ -191,6 +199,7 @@ mod tests {
         assert_eq!(display_hotkey("Alt+F5"), "⌥F5");
     }
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn tooltip_names_the_hotkey() {
         let s = Settings::default();
