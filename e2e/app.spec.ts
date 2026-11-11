@@ -646,16 +646,186 @@ test.describe("handwriting", () => {
   });
 });
 
-test.describe("onboarding", () => {
-  test("shows on first launch and can be completed", async ({ page }) => {
+test.describe("quick start spotlight tour", () => {
+  type Rect = { x: number; y: number; width: number; height: number };
+  const rectOf = (page: Page, sel: string) => page.locator(sel).boundingBox() as Promise<Rect>;
+  const contains = (outer: Rect, inner: Rect) =>
+    outer.x <= inner.x + 0.5 &&
+    outer.y <= inner.y + 0.5 &&
+    outer.x + outer.width >= inner.x + inner.width - 0.5 &&
+    outer.y + outer.height >= inner.y + inner.height - 0.5;
+  const overlaps = (a: Rect, b: Rect) =>
+    a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+  /**
+   * Wait until the hole has finished gliding and wraps exactly the given controls
+   * (contains them, at most a few px of padding), and the card has come to rest:
+   * same position on two reads 100 ms apart. Mid-animation frames legitimately overlap.
+   */
+  async function expectSpotlight(page: Page, ...targets: string[]) {
+    await expect
+      .poll(async () => {
+        const hole = await rectOf(page, ".tour-hole");
+        const rects = await Promise.all(targets.map((t) => rectOf(page, t)));
+        if (!rects.every((r) => contains(hole, r))) return "hole does not contain target";
+        const left = Math.min(...rects.map((r) => r.x));
+        const right = Math.max(...rects.map((r) => r.x + r.width));
+        if (hole.width > right - left + 16) return "hole still wider than target";
+        const a = await rectOf(page, ".tour-card");
+        await page.waitForTimeout(100);
+        const b = await rectOf(page, ".tour-card");
+        return a.x === b.x && a.y === b.y ? "settled" : "card still moving";
+      })
+      .toBe("settled");
+  }
+  const STEPS: [string, string[]][] = [
+    ["截图识别", ["#capture-btn"]],
+    ["图片、PDF 与手写", ["#image-btn", "#pdf-btn", "#handwriting-btn"]],
+    ["编辑与预览", ["#editor", "#preview-paper"]],
+    ["复制与导出", ["#copy-btn", "#export-btn"]],
+    ["历史记录", ["#history"]],
+    ["快捷键与设置", ["#clear-history-btn", "#hotkey-btn", "#favorites-btn", "#settings-btn"]],
+    ["后台运行", ["#onboarding-btn"]],
+  ];
+
+  test("starts on first launch and spotlights each real control in turn", async ({ page }) => {
     await open(page, { settings: { onboarding_done: false } });
-    const dlg = page.locator("#onboarding-dialog");
-    await expect(dlg).toBeVisible();
-    await expect(dlg.locator("li.on h3")).toHaveText("选择识别类型");
-    for (let i = 0; i < 3; i++) await page.click("#onboarding-next");
-    await expect(dlg.locator("li.on h3")).toHaveText("图片、PDF 与手写");
-    await page.click("#onboarding-next");
-    await expect(dlg).toBeHidden();
+    const tour = page.locator(".tour");
+    await expect(tour).toBeVisible();
+    await expect(tour).toHaveAttribute("role", "dialog");
+    for (const [i, [title, targets]] of STEPS.entries()) {
+      await expect(page.locator(".tour-count")).toHaveText(`${i + 1} / ${STEPS.length}`);
+      await expect(page.locator(".tour-title")).toHaveText(title);
+      await expectSpotlight(page, ...targets);
+      // The card never covers what it is pointing at, and stays in the window.
+      const card = await rectOf(page, ".tour-card");
+      const hole = await rectOf(page, ".tour-hole");
+      expect(overlaps(card, hole), `step ${i + 1} card overlaps its target`).toBe(false);
+      expect(card.x >= 0 && card.y >= 0 && card.x + card.width <= 1160 && card.y + card.height <= 720).toBe(true);
+      if (i < STEPS.length - 1) await page.click(".tour-next");
+    }
+    await expect(page.locator(".tour-next")).toHaveText("开始使用");
+    await expect(page.locator(".tour-body")).toContainText("⌘F");
+    await page.click(".tour-next");
+    await expect(tour).toHaveCount(0);
     await expect.poll(() => mock<boolean>(page, "settings.onboarding_done")).toBe(true);
+  });
+
+  test("Back, arrow keys and Enter move between steps", async ({ page }) => {
+    await open(page);
+    await page.click("#onboarding-btn");
+    await expect(page.locator(".tour-back")).toBeDisabled();
+    await expect(page.locator(".tour-next")).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".tour-title")).toHaveText("图片、PDF 与手写");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator(".tour-title")).toHaveText("编辑与预览");
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.locator(".tour-title")).toHaveText("图片、PDF 与手写");
+    await page.click(".tour-back");
+    await expect(page.locator(".tour-title")).toHaveText("截图识别");
+    await page.keyboard.press("ArrowLeft"); // already first: stays
+    await expect(page.locator(".tour-count")).toHaveText("1 / 7");
+  });
+
+  test("Skip and Esc end the tour, mark it seen and return focus", async ({ page }) => {
+    await open(page, { settings: { onboarding_done: false } });
+    await page.click(".tour-next");
+    await page.click(".tour-skip");
+    await expect(page.locator(".tour")).toHaveCount(0);
+    await expect.poll(() => mock<boolean>(page, "settings.onboarding_done")).toBe(true);
+
+    await page.focus("#onboarding-btn");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".tour")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".tour")).toHaveCount(0);
+    await expect(page.locator("#onboarding-btn")).toBeFocused();
+  });
+
+  test("does not reappear once seen, and replaying it does not save settings", async ({ page }) => {
+    await open(page); // onboarding_done: true
+    await expect(page.locator(".tour")).toHaveCount(0);
+    await page.click("#onboarding-btn");
+    for (let i = 0; i < STEPS.length; i++) await page.click(".tour-next");
+    await expect(page.locator(".tour")).toHaveCount(0);
+    const calls = await mock<{ cmd: string }[]>(page, "calls");
+    expect(calls.filter((c) => c.cmd === "save_settings")).toHaveLength(0);
+  });
+
+  test("highlighted controls cannot be clicked through the overlay", async ({ page }) => {
+    await open(page);
+    await page.click("#onboarding-btn");
+    await expectSpotlight(page, "#capture-btn");
+    const box = await rectOf(page, "#capture-btn");
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.click(600, 600); // the dimmed area does nothing either
+    await expect(page.locator(".tour")).toBeVisible();
+    await expect(page.locator(".tour-count")).toHaveText("1 / 7");
+    const calls = await mock<{ cmd: string }[]>(page, "calls");
+    expect(calls.some((c) => c.cmd === "capture")).toBe(false);
+    await expect(page.locator(".tour-next")).toBeFocused();
+  });
+
+  test("Tab stays on the tour's buttons", async ({ page }) => {
+    await open(page);
+    await page.click("#onboarding-btn");
+    await page.click(".tour-next"); // step 2: Skip, Back and Next are all enabled
+    const focused = () => page.evaluate(() => document.activeElement?.className ?? "");
+    const seen = new Set<string>();
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press("Tab");
+      seen.add(await focused());
+    }
+    expect([...seen].every((c) => /tour-(skip|back|next)/.test(c))).toBe(true);
+    expect(seen.size).toBe(3);
+  });
+
+  test("follows the layout when the window is resized", async ({ page }) => {
+    await open(page);
+    await page.click("#onboarding-btn");
+    for (let i = 0; i < 3; i++) await page.click(".tour-next"); // 复制与导出, top right
+    await expectSpotlight(page, "#copy-btn", "#export-btn");
+    await page.setViewportSize({ width: 940, height: 600 }); // the app's minimum window size
+    await expectSpotlight(page, "#copy-btn", "#export-btn");
+    const card = await rectOf(page, ".tour-card");
+    expect(card.x + card.width).toBeLessThanOrEqual(940);
+    // Every step still fits at the minimum size.
+    await page.click(".tour-skip");
+    await page.click("#onboarding-btn");
+    for (const [i, [, targets]] of STEPS.entries()) {
+      await expectSpotlight(page, ...targets);
+      const c = await rectOf(page, ".tour-card");
+      expect(c.x >= 0 && c.y >= 0 && c.x + c.width <= 940 && c.y + c.height <= 600, `step ${i + 1}`).toBe(true);
+      expect(overlaps(c, await rectOf(page, ".tour-hole")), `step ${i + 1} overlap`).toBe(false);
+      if (i < STEPS.length - 1) await page.click(".tour-next");
+    }
+  });
+
+  test("the global hotkey ends the tour and captures; paste is ignored", async ({ page }) => {
+    await open(page, { outcomes: [{ text: "e^{x}" }] });
+    await page.click("#onboarding-btn");
+    await page.evaluate(() => document.dispatchEvent(new Event("paste")));
+    await expect(page.locator(".tour")).toBeVisible();
+    await page.evaluate(() => (window as any).__mock.emit("hotkey-capture", null));
+    await expect(page.locator(".tour")).toHaveCount(0);
+    await expect(page.locator("#result-text")).toHaveValue("e^{x}");
+  });
+
+  test("menu bar Settings… closes the tour first", async ({ page }) => {
+    await open(page);
+    await page.click("#onboarding-btn");
+    await page.evaluate(() => (window as any).__mock.emit("open-settings", null));
+    await expect(page.locator(".tour")).toHaveCount(0);
+    await expect(page.locator("#settings-dialog")).toBeVisible();
+  });
+
+  test("is translated and uses the configured shortcut", async ({ page }) => {
+    await open(page, { settings: { language: "en", hotkey: "Control+Shift+K", onboarding_done: false } });
+    await expect(page.locator(".tour-title")).toHaveText("Capture");
+    await expect(page.locator(".tour-body")).toContainText("Press ⌃⇧K or click here");
+    await expect(page.locator(".tour-skip")).toHaveText("Skip");
+    await expect(page.locator(".tour-next")).toHaveText("Next");
+    await page.click(".tour-next");
+    await expect(page.locator(".tour-back")).toHaveText("Back");
   });
 });

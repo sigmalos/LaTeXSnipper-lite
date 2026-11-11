@@ -23,6 +23,7 @@ import {
 } from "./lib/format";
 import { getLang, setLang, t, translateDom } from "./lib/i18n";
 import { InkModel, drawStrokes, inkToPng } from "./lib/ink";
+import { SpotlightTour, type TourStep } from "./lib/tour";
 import { renderInto, toHtmlDocument, toMathML, toSvg } from "./lib/math";
 
 const DEFAULT_HOTKEY = "CommandOrControl+F";
@@ -320,7 +321,10 @@ async function recognizeWith(fn: () => Promise<Recognition | null>, mode: Mode):
   }
 }
 
-const capture = () => recognizeWith(() => api.capture(snap.settings.mode), snap.settings.mode);
+const capture = () => {
+  if (tour.isOpen) tour.end(false); // the user went straight to trying it
+  return recognizeWith(() => api.capture(snap.settings.mode), snap.settings.mode);
+};
 $("capture-btn").addEventListener("click", capture);
 
 function readAsDataUrl(file: Blob): Promise<string> {
@@ -345,6 +349,7 @@ imageInput.addEventListener("change", () => {
 });
 
 document.addEventListener("paste", (e) => {
+  if (tour.isOpen) return;
   if (document.activeElement instanceof HTMLTextAreaElement || document.activeElement instanceof HTMLInputElement) return;
   const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith("image/"));
   if (file) {
@@ -672,6 +677,7 @@ function readSettingsForm(): Settings {
 function openSettings(): void {
   const dlg = $<HTMLDialogElement>("settings-dialog");
   if (dlg.open) return;
+  if (tour.isOpen) tour.end(false);
   document.querySelectorAll<HTMLDialogElement>("dialog[open]").forEach((d) => d.close());
   const s = snap.settings;
   form.querySelectorAll<HTMLInputElement>("input[type=radio]").forEach((r) => {
@@ -1002,57 +1008,72 @@ $("pdf-insert").addEventListener("click", () => {
 });
 $("pdf-export").addEventListener("click", () => exportAs($<HTMLTextAreaElement>("pdf-text").value, "md", "md", "Markdown"));
 
-// ------------------------------------------------------------------ onboarding
+// ------------------------------------------------------------------ quick start (spotlight tour)
 
-const STEPS = [
-  ["选择识别类型", "公式适合单个或多行公式；混合适合含公式的段落；纯文字只识别文字。在“设置”里随时切换。"],
-  ["确认结果", "识别结果会先显示在确认窗口里，可以修改。确认后复制到剪贴板，并记入历史。"],
-  ["图片、PDF 与手写", "可以拖入图片、粘贴截图、识别整份 PDF，或直接手写公式。"],
+const TOUR_STEPS: TourStep[] = [
+  {
+    targets: ["#capture-btn"],
+    title: "截图识别",
+    body: "按 {hotkey} 或点这里，框选屏幕上的公式。第一次使用时，macOS 会请求屏幕录制权限。",
+  },
+  {
+    targets: ["#image-btn", "#pdf-btn", "#handwriting-btn"],
+    title: "图片、PDF 与手写",
+    body: "也可以识别图片文件、整份 PDF，或直接手写公式。把图片拖进窗口，或在窗口里按 ⌘V 粘贴也行。",
+  },
+  {
+    targets: ["#editor", "#preview-paper"],
+    title: "编辑与预览",
+    body: "识别结果会先在确认窗口里让你检查和修改，确认后填入这里。下方的方格纸实时渲染公式。",
+  },
+  {
+    targets: ["#copy-btn", "#export-btn"],
+    title: "复制与导出",
+    body: "复制编辑器里的内容，或导出为 TeX、Markdown、SVG 等格式。导出菜单里还能复制为 $…$、equation 或 MathML。",
+  },
+  {
+    targets: ["#history"],
+    title: "历史记录",
+    body: "每次确认的结果都记在这里。点一条载入编辑器，右键可以重命名、收藏或删除。",
+  },
+  {
+    targets: [".side-tools"],
+    title: "快捷键与设置",
+    body: "在这里更改截图快捷键、打开收藏夹。识别类型、模型下载、主题和语言都在“设置”里。",
+  },
+  {
+    targets: ["#onboarding-btn"],
+    title: "后台运行",
+    body: "关闭窗口后应用仍在后台运行，用 {hotkey} 或菜单栏的 Σ 图标随时截图，按 ⌘Q 完全退出。想再看一遍引导，点这个按钮。",
+  },
 ];
-let step = 0;
 
-function onboardingSteps(): string[][] {
-  return snap.capture_supported
-    ? [STEPS[0], ["截图识别", "按 {hotkey}，或点“截图识别”，框选屏幕上的公式。首次使用时 macOS 会请求屏幕录制权限。"], ...STEPS.slice(1)]
-    : STEPS;
+const tour = new SpotlightTour(
+  TOUR_STEPS,
+  () => {
+    const hotkey = formatAccelerator(snap.settings.hotkey);
+    return {
+      title: (s) => t(s.title),
+      body: (s) => t(s.body, { hotkey }),
+      skip: t("跳过"),
+      back: t("上一步"),
+      next: t("下一步"),
+      done: t("开始使用"),
+    };
+  },
+  async () => {
+    // Finishing or skipping both count: the tour is offered once, then lives behind the ? button.
+    if (!snap.settings.onboarding_done) snap.settings = await api.saveSettings({ ...snap.settings, onboarding_done: true });
+  },
+);
+
+function openTour(): void {
+  closeMenus();
+  document.querySelectorAll<HTMLDialogElement>("dialog[open]").forEach((d) => d.close());
+  tour.start();
 }
 
-function showStep(): void {
-  const hotkey = formatAccelerator(snap.settings.hotkey);
-  const steps = onboardingSteps();
-  $("onboarding-steps").innerHTML = "";
-  steps.forEach(([title, body], i) => {
-    const li = document.createElement("li");
-    li.className = i === step ? "on" : "";
-    li.innerHTML = `<span class="n">${i + 1} / ${steps.length}</span><h3></h3><p></p>`;
-    li.querySelector("h3")!.textContent = t(title);
-    li.querySelector("p")!.textContent = t(body, { hotkey });
-    $("onboarding-steps").appendChild(li);
-  });
-  $("onboarding-dots").innerHTML = steps.map((_, i) => `<i class="${i === step ? "on" : ""}"></i>`).join("");
-  $<HTMLButtonElement>("onboarding-back").disabled = step === 0;
-  $("onboarding-next").textContent = t(step === steps.length - 1 ? "开始使用" : "下一步");
-}
-
-function openOnboarding(): void {
-  step = 0;
-  showStep();
-  $<HTMLDialogElement>("onboarding-dialog").showModal();
-}
-
-$("onboarding-btn").addEventListener("click", openOnboarding);
-$("onboarding-back").addEventListener("click", () => {
-  step = Math.max(0, step - 1);
-  showStep();
-});
-$("onboarding-next").addEventListener("click", async () => {
-  if (step < onboardingSteps().length - 1) {
-    step++;
-    return showStep();
-  }
-  $<HTMLDialogElement>("onboarding-dialog").close();
-  if (!snap.settings.onboarding_done) snap.settings = await api.saveSettings({ ...snap.settings, onboarding_done: true });
-});
+$("onboarding-btn").addEventListener("click", openTour);
 
 // ------------------------------------------------------------------ boot
 
@@ -1095,7 +1116,7 @@ async function boot(): Promise<void> {
       (on) => ($("drop-veil").hidden = !on),
     )
     .catch(() => undefined);
-  if (!snap.settings.onboarding_done) openOnboarding();
+  if (!snap.settings.onboarding_done) openTour();
   document.body.dataset.ready = "true";
   if (snap.selfcheck) await selfcheck();
 }

@@ -117,19 +117,30 @@ const EN: Record<string, string> = {
   "下一步": "Next",
   "上一步": "Back",
   "开始使用": "Get started",
-  "选择识别类型": "Pick a recognition type",
-  "公式适合单个或多行公式；混合适合含公式的段落；纯文字只识别文字。在“设置”里随时切换。":
-    "Formula is for single or multi-line equations, Mixed for paragraphs with math, Text for plain text. Change it any time in Settings.",
-  "按 {hotkey}，或点“截图识别”，框选屏幕上的公式。首次使用时 macOS 会请求屏幕录制权限。":
-    "Press {hotkey} or click Capture, then drag over a formula on screen. macOS asks for Screen Recording permission the first time.",
-  "确认结果": "Review the result",
-  "识别结果会先显示在确认窗口里，可以修改。确认后复制到剪贴板，并记入历史。":
-    "The result opens for review so you can fix it. Confirming copies it and adds it to History.",
   "图片、PDF 与手写": "Images, PDFs and handwriting",
   "可以拖入图片、粘贴截图、识别整份 PDF，或直接手写公式。":
     "Drop images, paste a screenshot, recognize a whole PDF, or write a formula by hand.",
   "无法渲染：{error}": "Can’t render: {error}",
   "拖到这里识别": "Drop to recognize",
+  "跳过": "Skip",
+  "按 {hotkey} 或点这里，框选屏幕上的公式。第一次使用时，macOS 会请求屏幕录制权限。":
+    "Press {hotkey} or click here, then drag over a formula on screen. The first time, macOS asks for Screen Recording permission.",
+  "也可以识别图片文件、整份 PDF，或直接手写公式。把图片拖进窗口，或在窗口里按 ⌘V 粘贴也行。":
+    "You can also recognize image files, whole PDFs or handwriting. Dropping an image on the window or pasting with ⌘V works too.",
+  "编辑与预览": "Edit and preview",
+  "识别结果会先在确认窗口里让你检查和修改，确认后填入这里。下方的方格纸实时渲染公式。":
+    "Each result opens for review first; once you confirm, it lands here. The graph paper below renders it as you type.",
+  "复制与导出": "Copy and export",
+  "复制编辑器里的内容，或导出为 TeX、Markdown、SVG 等格式。导出菜单里还能复制为 $…$、equation 或 MathML。":
+    "Copy what’s in the editor, or export it as TeX, Markdown, SVG and more. The export menu can also copy it as $…$, equation or MathML.",
+  "每次确认的结果都记在这里。点一条载入编辑器，右键可以重命名、收藏或删除。":
+    "Every confirmed result is kept here. Click one to load it into the editor; right-click to rename, favorite or delete it.",
+  "快捷键与设置": "Shortcut and settings",
+  "在这里更改截图快捷键、打开收藏夹。识别类型、模型下载、主题和语言都在“设置”里。":
+    "Change the capture shortcut and open your favorites here. Recognition type, model downloads, theme and language are in Settings.",
+  "后台运行": "Runs in the background",
+  "关闭窗口后应用仍在后台运行，用 {hotkey} 或菜单栏的 Σ 图标随时截图，按 ⌘Q 完全退出。想再看一遍引导，点这个按钮。":
+    "Closing the window keeps the app running: capture any time with {hotkey} or the Σ menu bar icon, and press ⌘Q to quit. Click this button to see this tour again.",
   "MathCraft 模型": "MathCraft models",
   "已下载 {n}/{total}": "{n} of {total} downloaded",
   "公式检测": "Formula detection",

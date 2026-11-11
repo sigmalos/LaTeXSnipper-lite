@@ -34,6 +34,7 @@ describe("i18n", () => {
     for (const m of html.matchAll(/data-i18n(?:-placeholder|-title)?="([^"]+)"/g)) used.add(m[1]);
     for (const m of main.matchAll(/\bt\(\s*"([^"]+)"/g)) used.add(m[1]);
     for (const m of main.matchAll(/\["([^"]+)", "([^"]+)"\]/g)) used.add(m[1]), used.add(m[2]);
+    for (const m of main.matchAll(/\b(?:title|body): "([^"]+)"/g)) used.add(m[1]);
     const missing = [...used].filter((k) => /[\u4e00-\u9fff]/.test(k) && !translationKeys.includes(k));
     expect(missing).toEqual([]);
   });

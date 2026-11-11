@@ -16,6 +16,7 @@
   --danger: #b42318;
   --ok: #1d7a46;
   --shadow-pop: 0 10px 30px rgba(20, 28, 45, 0.16), 0 1px 2px rgba(20, 28, 45, 0.12);
+  --tour-dim: rgba(16, 22, 36, 0.52);
   --r-sm: 6px;
   --r-md: 9px;
   --r-lg: 14px;
@@ -41,6 +42,7 @@
   --danger: #ff8a80;
   --ok: #5fd08f;
   --shadow-pop: 0 12px 34px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --tour-dim: rgba(0, 0, 0, 0.62);
   color-scheme: dark;
 }
 
@@ -614,8 +616,7 @@ dialog footer {
   gap: 8px;
   margin-top: 4px;
 }
-dialog footer .version,
-dialog footer .dots {
+dialog footer .version {
   margin-right: auto;
 }
 .hint {
@@ -937,48 +938,91 @@ progress::-webkit-progress-value {
   max-height: none;
 }
 
-.steps {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+/* ---------------------------------------------------------- spotlight tour */
+
+.tour {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  animation: tour-in 0.18s ease-out;
 }
-.steps li {
+.tour.centered {
+  background: var(--tour-dim);
+}
+.tour-drag {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 30px;
+}
+.tour-hole {
+  position: fixed;
+  border-radius: 12px;
+  /* The ring marks the control; the huge spread dims everything else. */
+  box-shadow:
+    0 0 0 2px var(--ink),
+    0 0 0 6px var(--ink-wash),
+    0 0 0 200vmax var(--tour-dim);
+  pointer-events: none;
+  transition:
+    left 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
+    top 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
+    width 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
+    height 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.tour.centered .tour-hole {
   display: none;
 }
-.steps li.on {
-  display: block;
+.tour-card {
+  position: fixed;
+  width: 300px;
+  padding: 16px 18px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  transition:
+    left 0.24s cubic-bezier(0.2, 0.7, 0.2, 1),
+    top 0.24s cubic-bezier(0.2, 0.7, 0.2, 1);
 }
-.steps .n {
+.tour.instant .tour-hole,
+.tour.instant .tour-card {
+  transition: none;
+}
+.tour-count {
+  margin: 0;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
-.steps h3 {
-  margin: 4px 0 8px;
+.tour-title {
+  margin: 4px 0 6px;
+  font-size: 15px;
 }
-.steps p {
+.tour-body {
   margin: 0;
   color: var(--muted);
   line-height: 1.65;
 }
-.dots {
+.tour-card footer {
   display: flex;
-  gap: 5px;
+  align-items: center;
+  gap: 6px;
+  margin-top: 14px;
 }
-.dots i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--line);
-}
-.dots i.on {
-  background: var(--ink);
+.tour-skip {
+  margin-right: auto;
 }
 
 @keyframes rise {
   from {
     opacity: 0;
     transform: translateY(6px);
+  }
+}
+@keyframes tour-in {
+  from {
+    opacity: 0;
   }
 }
 @keyframes pulse {
