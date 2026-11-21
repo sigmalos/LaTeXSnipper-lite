@@ -1,0 +1,50 @@
+[package]
+name = "latexsnipper-office-host"
+version = "1.0.0"
+description = "LaTeXSnipper Office for Mac: the local HTTPS host behind the Word / PowerPoint add-in"
+authors = ["SakuraMathcraft"]
+license = "GPL-3.0-only"
+edition = "2021"
+rust-version = "1.85"
+publish = false
+
+[lib]
+name = "office_host"
+
+[[bin]]
+name = "latexsnipper-office-host"
+path = "src/main.rs"
+
+[dependencies]
+mathcraft = { path = "../../crates/mathcraft" }
+anyhow = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls-pki-types = { version = "1", features = ["std"] }
+rcgen = { version = "0.13", default-features = false, features = ["ring", "pem"] }
+time = "0.3"
+sha2 = "0.10"
+quick-xml = "0.37"
+libc = "0.2"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
+core-graphics = "0.24"
+core-text = "21"
+foreign-types = "0.5"
+
+[dev-dependencies]
+tempfile = "3"
+ureq = { version = "2.12", default-features = false, features = ["tls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+opt-level = 3
+panic = "abort"
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 3

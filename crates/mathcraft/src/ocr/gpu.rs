@@ -27,6 +27,15 @@ pub struct Gpu {
 }
 
 static PROBE: OnceLock<Option<Gpu>> = OnceLock::new();
+/// The application's own CUDA library directory (Linux); see [`set_cuda_dir`].
+static CUDA_DIR: OnceLock<std::path::PathBuf> = OnceLock::new();
+
+/// Tell the engine where the application keeps the CUDA provider libraries
+/// (searched after `LATEXSNIPPER_CUDA_DIR`). Only the first call counts; a
+/// no-op on other platforms.
+pub fn set_cuda_dir(dir: std::path::PathBuf) {
+    let _ = CUDA_DIR.set(dir);
+}
 /// Set once the provider itself turned out to be unusable, so later sessions
 /// go straight to the CPU instead of failing the same way again.
 static BROKEN: AtomicBool = AtomicBool::new(false);
@@ -155,7 +164,9 @@ pub fn cuda_library_dirs() -> Vec<std::path::PathBuf> {
     if let Some(dir) = std::env::var_os("LATEXSNIPPER_CUDA_DIR") {
         dirs.push(dir.into());
     }
-    dirs.push(crate::data_dir().join("onnxruntime-cuda"));
+    if let Some(dir) = CUDA_DIR.get() {
+        dirs.push(dir.clone());
+    }
     if let Some(dir) = std::env::current_exe()
         .ok()
         .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
@@ -209,10 +220,13 @@ fn probe() -> Result<Gpu, String> {
         None => {
             // Maybe installed system-wide; check before ONNX Runtime tries.
             let hint = || {
+                let into = CUDA_DIR.get().map_or_else(
+                    || "the application's onnxruntime-cuda directory".to_string(),
+                    |d| d.display().to_string(),
+                );
                 format!(
                     "{CUDA} not found; copy it and {SHARED} from the ONNX Runtime 1.22 \
-                     GPU build into {}",
-                    crate::data_dir().join("onnxruntime-cuda").display()
+                     GPU build into {into}"
                 )
             };
             dlopen_name(SHARED, libc::RTLD_NOW | libc::RTLD_GLOBAL).map_err(|_| hint())?;

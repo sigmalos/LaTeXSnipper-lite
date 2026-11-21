@@ -58,12 +58,69 @@ jobs:
         run: mkdir -p dist && echo '<!doctype html>' > dist/index.html
       - name: Format
         if: runner.os == 'Linux'
-        working-directory: backend
-        run: cargo fmt --check
+        run: |
+          (cd backend && cargo fmt --check)
+          (cd crates/mathcraft && cargo fmt --check)
       - name: Clippy
         working-directory: backend
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Clippy (OCR engine, shared with the Office add-in)
+        working-directory: crates/mathcraft
         run: cargo clippy --all-targets -- -D warnings
       - uses: ./.github/actions/models
       - name: Tests, including real-model parity with the original Python output
         working-directory: backend
         run: cargo test
+      - name: OCR engine tests
+        working-directory: crates/mathcraft
+        run: cargo test
+
+  office:
+    name: Office add-in (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: office_plugin
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/setup
+        with:
+          cache-key: office
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            office_plugin/host -> target
+            office_plugin/app -> target
+          key: office
+      - run: npm ci
+      - name: Add-in pages, Setup window and contract tests
+        run: npm test
+      - run: npm run lint
+      - name: Assemble the served files (MathJax checked against its SHA-256 manifest)
+        run: npm run assemble
+      - name: Format
+        run: |
+          (cd host && cargo fmt --check)
+          (cd app && cargo fmt --check)
+      - name: Clippy (host)
+        working-directory: office_plugin/host
+        run: cargo clippy --all-targets -- -D warnings
+      - uses: ./.github/actions/models
+      - name: Host tests (HTTPS, OMML, CoreText outlines, real-model recognition)
+        working-directory: office_plugin/host
+        run: cargo test
+      - name: Build LaTeXSnipper Office.app and its DMG, then self-test the bundle
+        run: npm run build
+      - name: Clippy (Setup app)
+        working-directory: office_plugin/app
+        run: cargo clippy --all-targets -- -D warnings
+      - run: npx playwright install webkit
+      - name: Add-in pages and Setup window in WebKit
+        run: npx playwright test
+      - uses: actions/upload-artifact@v7
+        if: failure()
+        with:
+          name: office-playwright-traces
+          path: office_plugin/test-results/
+          retention-days: 7

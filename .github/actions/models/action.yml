@@ -10,7 +10,7 @@ runs:
       uses: actions/cache@v6
       with:
         path: .ci-models
-        key: mathcraft-models-${{ hashFiles('backend/resources/models.json') }}
+        key: mathcraft-models-${{ hashFiles('crates/mathcraft/resources/models.json') }}
         enableCrossOsArchive: true
 
     - name: Download models

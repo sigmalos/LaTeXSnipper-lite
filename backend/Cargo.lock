@@ -1950,12 +1950,9 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "image",
- "libc",
- "onnx-rs",
- "ort",
+ "mathcraft",
  "serde",
  "serde_json",
- "sha2",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -1964,8 +1961,6 @@ dependencies = [
  "tempfile",
  "tiny_http",
  "ureq 2.12.1",
- "windows",
- "zip",
 ]
 
 [[package]]
@@ -2073,6 +2068,23 @@ dependencies = [
  "log",
  "tendril",
  "web_atoms 0.3.0",
+]
+
+[[package]]
+name = "mathcraft"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "libc",
+ "onnx-rs",
+ "ort",
+ "serde",
+ "serde_json",
+ "sha2",
+ "ureq 2.12.1",
+ "windows",
+ "zip",
 ]
 
 [[package]]

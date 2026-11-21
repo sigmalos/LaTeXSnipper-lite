@@ -113,6 +113,7 @@ pub fn model_status(root: &Path) -> BTreeMap<&'static str, bool> {
 
 impl Core {
     pub fn new(dir: &Path) -> Self {
+        crate::ocr::gpu::set_cuda_dir(dir.join("onnxruntime-cuda"));
         Self {
             store: Mutex::new(Store::open(dir)),
             engine: Mutex::new(None),

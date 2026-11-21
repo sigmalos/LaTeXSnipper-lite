@@ -1,9 +1,10 @@
 pub mod commands;
 pub mod external;
-pub mod modelhub;
-pub mod ocr;
 pub mod shell;
 pub mod store;
+
+// The engine lives in crates/mathcraft so the Office add-in host can link it too.
+pub use mathcraft::{modelhub, ocr};
 
 use commands::Core;
 use std::path::PathBuf;

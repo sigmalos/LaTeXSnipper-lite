@@ -1,0 +1,46 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LaTeXSnipper Office",
+  "version": "1.0.0",
+  "identifier": "com.mathcraft.latexsnipper.office",
+  "build": {
+    "beforeBuildCommand": "npm run ui",
+    "beforeDevCommand": "npm run ui",
+    "frontendDist": "../build/ui"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "LaTeXSnipper Office",
+        "width": 560,
+        "height": 440,
+        "resizable": false,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "category": "Productivity",
+    "copyright": "GPL-3.0-only © SakuraMathcraft",
+    "shortDescription": "LaTeXSnipper formulas in Word and PowerPoint",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns"],
+    "externalBin": ["binaries/latexsnipper-office-host"],
+    "resources": { "../build/office_addin/": "office_addin/" },
+    "macOS": {
+      "minimumSystemVersion": "13.0",
+      "signingIdentity": "-",
+      "dmg": {
+        "windowSize": { "width": 600, "height": 380 },
+        "appPosition": { "x": 160, "y": 190 },
+        "applicationFolderPosition": { "x": 440, "y": 190 }
+      }
+    }
+  }
+}
