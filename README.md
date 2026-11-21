@@ -21,7 +21,7 @@
 
 **系统要求**：macOS 13 或更新版本，Apple Silicon（M 系列芯片）。
 
-1. 从 [Releases](https://github.com/sigmalos/LaTeXSnipper-lite/releases/latest) 下载 `LaTeXSnipper_1.0.0_aarch64.dmg`。
+1. 从 [Releases](https://github.com/sigmalos/LaTeXSnipper-lite/releases/latest) 下载 `LaTeXSnipper-Lite_<版本>_macos-arm64.dmg`。
 2. 打开 DMG，把 **LaTeXSnipper** 拖进「应用程序」。
 3. 安装包没有经过 Apple 公证，首次打开时 macOS 会提示「Apple 无法验证“LaTeXSnipper”是否包含恶意软件」。点「完成」，然后打开「系统设置 → 隐私与安全性」，在页面底部点「仍要打开」。也可以在终端执行：
 
@@ -35,7 +35,7 @@
 
 **系统要求**：Windows 10 / 11，x64。
 
-1. 从 [Releases](https://github.com/sigmalos/LaTeXSnipper-lite/releases/latest) 下载 `LaTeXSnipper.Lite_1.0.0_x64-setup.exe` 并运行，安装不需要管理员权限。
+1. 从 [Releases](https://github.com/sigmalos/LaTeXSnipper-lite/releases/latest) 下载 `LaTeXSnipper-Lite_<版本>_windows-x64-setup.exe` 并运行，安装不需要管理员权限。
 2. 安装包没有代码签名，SmartScreen 提示「Windows 已保护你的电脑」时，点「更多信息 → 仍要运行」。
 3. 应用使用系统的 Microsoft Edge WebView2 Runtime。Windows 10 / 11 一般已自带；如果缺失，安装程序会自动下载。
 
@@ -43,15 +43,13 @@ Windows 版没有截图识别。可以先用系统自带的 **Win+Shift+S** 截�
 
 ### Linux
 
-**系统要求**：x86_64。Debian / Ubuntu 用 `.deb`，其他发行版用 AppImage。
+**系统要求**：x86_64，Debian / Ubuntu 等使用 `.deb` 的发行版。
 
 ```sh
-sudo apt install ./LaTeXSnipper_1.0.0_amd64.deb
-# 或者直接运行 AppImage
-chmod +x LaTeXSnipper_1.0.0_amd64.AppImage && ./LaTeXSnipper_1.0.0_amd64.AppImage
+sudo apt install ./latexsnipper-lite_<版本>_amd64.deb
 ```
 
-Debian 包依赖 `libwebkit2gtk-4.1-0`、`libgtk-3-0`、`libayatana-appindicator3-1`；AppImage 自带这些库，体积因此较大。Linux 版同样没有截图识别，可以粘贴、拖入或导入图片。
+Debian 包依赖 `libwebkit2gtk-4.1-0`、`libgtk-3-0`、`libayatana-appindicator3-1`，安装时由 apt 自动补齐。数据保存在 `~/.local/share/latexsnipper-lite`（遵循 `XDG_DATA_HOME`）。Linux 版同样没有截图识别，可以粘贴、拖入或导入图片。
 
 > [!NOTE]
 > 第一次识别时应用会提示下载所需模型（只用公式识别约 104 MB）。在 macOS 上，Lite 可以使用原版已下载的模型。
@@ -158,7 +156,7 @@ npm run dmg           # 构建 DMG，输出到 backend/target/release/bundle/dmg
 
 Office 插件在 `office_plugin/` 中单独构建（`cd office_plugin && npm ci && npm run build`），不经过上面这些命令，详见 [office_plugin/README.md](office_plugin/README.md)。
 
-在 Windows x64 上安装 Visual Studio C++ 生成工具和 Windows SDK 后，运行 `npm run tauri -- build --bundles nsis`。安装包输出到 `backend/target/release/bundle/nsis/`。构建前会自动下载 DirectML（`npm run directml`，从 NuGet 只取出其中的 `DirectML.dll` 并校验 SHA-256）；直接运行 `cargo` 命令前需要先手动执行一次这个命令，网络慢时可以用 `DIRECTML_NUPKG_URL` 指定 NuGet 镜像。在 Linux 上安装 WebKitGTK 4.1 等 Tauri 依赖后，运行 `npm run tauri -- build --bundles deb,appimage`。
+在 Windows x64 上安装 Visual Studio C++ 生成工具和 Windows SDK 后，运行 `npm run tauri -- build --bundles nsis`。安装包输出到 `backend/target/release/bundle/nsis/`。构建前会自动下载 DirectML（`npm run directml`，从 NuGet 只取出其中的 `DirectML.dll` 并校验 SHA-256）；直接运行 `cargo` 命令前需要先手动执行一次这个命令，网络慢时可以用 `DIRECTML_NUPKG_URL` 指定 NuGet 镜像。在 Linux 上安装 WebKitGTK 4.1 等 Tauri 依赖后，运行 `npm run tauri -- build --bundles deb`。
 
 <details>
 <summary><b>测试</b></summary>

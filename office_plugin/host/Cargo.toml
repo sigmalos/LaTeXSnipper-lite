@@ -1,6 +1,6 @@
 [package]
 name = "latexsnipper-office-host"
-version = "1.0.0"
+version = "1.1.0"
 description = "LaTeXSnipper Office for Mac: the local HTTPS host behind the Word / PowerPoint add-in"
 authors = ["SakuraMathcraft"]
 license = "GPL-3.0-only"

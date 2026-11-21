@@ -55,8 +55,6 @@ jobs:
 
       - name: Build installers
         shell: bash
-        env:
-          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: npx tauri build
 
       - uses: ./.github/actions/models
@@ -66,7 +64,7 @@ jobs:
         timeout-minutes: 10
         run: scripts/smoke-dmg.sh --require-models
 
-      - name: Smoke-test the .deb and the AppImage
+      - name: Smoke-test the .deb
         if: matrix.platform == 'linux'
         timeout-minutes: 10
         run: |
@@ -77,9 +75,6 @@ jobs:
           bin=$(dpkg -L "$pkg" | grep '^/usr/bin/' | head -1)
           [ -x "$bin" ] || { echo "no executable installed by $pkg"; dpkg -L "$pkg"; exit 1; }
           echo "installed $pkg: $bin"; scripts/smoke.sh "$bin" --require-models
-          appimage=$(ls $BUNDLE/appimage/*.AppImage)
-          chmod +x "$appimage"
-          APPIMAGE_EXTRACT_AND_RUN=1 scripts/smoke.sh "$appimage" --require-models
 
       # PowerShell, not Git Bash: MSYS rewrites "/S" to "S:/", which drops the
       # silent flag and leaves the installer's window waiting for a click.
@@ -109,8 +104,7 @@ jobs:
           mkdir out
           case "${{ matrix.platform }}" in
             macos) cp $BUNDLE/dmg/*.dmg "out/LaTeXSnipper-Lite_${VERSION}_macos-arm64.dmg" ;;
-            linux) cp $BUNDLE/deb/*.deb "out/latexsnipper-lite_${VERSION}_amd64.deb"
-                   cp $BUNDLE/appimage/*.AppImage "out/LaTeXSnipper-Lite_${VERSION}_linux-x86_64.AppImage" ;;
+            linux) cp $BUNDLE/deb/*.deb "out/latexsnipper-lite_${VERSION}_amd64.deb" ;;
             windows) cp $BUNDLE/nsis/*-setup.exe "out/LaTeXSnipper-Lite_${VERSION}_windows-x64-setup.exe" ;;
           esac
           ls -l out
@@ -170,7 +164,8 @@ jobs:
         run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
       - name: Create the release (all platforms at once)
         run: |
-          sed "s/{{VERSION}}/$VERSION/g" .github/release-notes.md > notes.md
+          office=$(node -p "require('./office_plugin/package.json').version")
+          sed -e "s/{{VERSION}}/$VERSION/g" -e "s/{{OFFICE_VERSION}}/$office/g" .github/release-notes.md > notes.md
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" out/* --clobber
           else
