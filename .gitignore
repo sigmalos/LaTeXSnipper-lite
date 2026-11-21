@@ -7,3 +7,15 @@ playwright-report/
 .DS_Store
 *.log
 .ci-models/
+backend/resources/windows/
+crates/*/target/
+crates/*/Cargo.lock
+office_plugin/node_modules/
+office_plugin/build/
+office_plugin/release/
+office_plugin/host/target/
+office_plugin/app/target/
+office_plugin/app/gen/
+office_plugin/app/binaries/
+office_plugin/test-results/
+office_plugin/playwright-report/
