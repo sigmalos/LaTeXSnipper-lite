@@ -90,16 +90,19 @@ Debian 包依赖 `libwebkit2gtk-4.1-0`、`libgtk-3-0`、`libayatana-appindicator
 
 ## 识别模型
 
-内置 MathCraft 由四个模型组成，从 [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) 下载，每个文件都会校验 SHA-256：
+内置 MathCraft 使用以下模型，每个文件都会校验 SHA-256。公式识别有标准和 Int8 两个版本，按设置只需下载其中一个：
 
-| 模型 | 用于 | 下载大小 |
-|---|---|---|
-| 公式检测 | 混合 | 64 MB |
-| 公式识别 | 公式、混合 | 104 MB |
-| 文字检测 | 混合、纯文字 | 4.3 MB |
-| 文字识别 | 混合、纯文字 | 13 MB |
+| 模型 | 用于 | 下载大小 | 下载来源 |
+|---|---|---|---|
+| 公式检测 | 混合 | 64 MB | [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) |
+| 公式识别 | 公式、混合 | 104 MB | [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) |
+| 公式识别(Int8) | 公式、混合 | 24 MB | [Gitee](https://gitee.com/sigmalyj/mathcraft-lite/releases) |
+| 文字检测 | 混合、纯文字 | 4.3 MB | [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) |
+| 文字识别 | 混合、纯文字 | 13 MB | [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) |
 
 在「设置 → 识别后端 → 内置 MathCraft」中可以查看每个模型的状态，并单独下载、重新下载或删除。改动立即生效，不需要重启。
+
+同一处的「公式识别模型」选择公式和混合识别使用哪个版本，默认是「标准」。Int8 是同一模型的量化版本，体积约为标准版的四分之一，在 CPU 上识别快约一倍，但个别符号的识别准确率略低。所选版本未下载时，识别前会提示下载。
 
 ### GPU 加速（Windows / Linux）
 

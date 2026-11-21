@@ -374,19 +374,51 @@ test.describe("settings", () => {
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 
-  test("built-in backend lists all four models with their download state", async ({ page }) => {
+  test("built-in backend lists all five models with their download state", async ({ page }) => {
     await open(page, { models: { formula: true, mixed: false, text: false } });
     await page.click("#settings-btn");
     const panel = page.locator("#builtin-fields");
     await expect(panel).toBeVisible();
-    await expect(page.locator("#models-count")).toHaveText("已下载 1/4");
+    await expect(page.locator("#models-count")).toHaveText("已下载 1/5");
     const rows = panel.locator(".model-row");
-    await expect(rows).toHaveCount(4);
-    await expect(rows.locator(".model-name")).toHaveText(["公式检测", "公式识别", "文字检测", "文字识别"]);
-    await expect(rows.locator(".model-use")).toHaveText(["用于：混合", "用于：公式、混合", "用于：混合、纯文字", "用于：混合、纯文字"]);
-    await expect(rows.locator(".model-size")).toHaveText(["64 MB", "104 MB", "4.3 MB", "13 MB"]);
-    await expect(rows.locator(".model-state")).toHaveText(["未下载", "已下载", "未下载", "未下载"]);
-    await expect(rows.locator(".model-download")).toHaveText(["下载", "重新下载", "下载", "下载"]);
+    await expect(rows).toHaveCount(5);
+    await expect(rows.locator(".model-name")).toHaveText(["公式检测", "公式识别", "公式识别(Int8)", "文字检测", "文字识别"]);
+    await expect(rows.locator(".model-use")).toHaveText([
+      "用于：混合",
+      "用于：公式、混合",
+      "用于：公式、混合",
+      "用于：混合、纯文字",
+      "用于：混合、纯文字",
+    ]);
+    await expect(rows.locator(".model-size")).toHaveText(["64 MB", "104 MB", "24 MB", "4.3 MB", "13 MB"]);
+    await expect(rows.locator(".model-state")).toHaveText(["未下载", "已下载", "未下载", "未下载", "未下载"]);
+    await expect(rows.locator(".model-download")).toHaveText(["下载", "重新下载", "下载", "下载", "下载"]);
+    await expect(page.locator("input[name=formula_model][value=standard]")).toBeChecked();
+  });
+
+  test("choosing the Int8 formula recognizer switches which model formula mode needs", async ({ page }) => {
+    await open(page, { models: { formula: true, mixed: false, text: false } });
+    await expect(page.locator("#status")).toContainText("状态: 就绪");
+    await page.click("#settings-btn");
+    await page.locator("#settings-form").getByText("Int8（更小更快）").click();
+    await page.locator("#settings-form").getByText("保存", { exact: true }).click();
+    await expect(page.locator("#settings-dialog")).toBeHidden();
+    await expect.poll(() => mock<string>(page, "settings.formula_model")).toBe("int8");
+    // Only the standard build is on disk, so formula mode now needs a download.
+    await expect(page.locator("#status")).toContainText("需下载模型");
+    await page.click("#capture-btn");
+    await expect(page.locator("#models-text")).toContainText("32 MB");
+    await page.click("#models-start");
+    await expect(page.locator("#models-dialog")).toBeHidden();
+    await expect(page.locator("#status")).toContainText("状态: 就绪");
+    const calls = await mock<{ cmd: string; args: { mode: string } }[]>(page, "calls");
+    expect(calls.filter((c) => c.cmd === "download_models").map((c) => c.args.mode)).toEqual(["formula"]);
+    expect(await mock<boolean>(page, "installed.has('mathcraft-formula-rec-int8')")).toBe(true);
+
+    // The standard build is no longer in use, so deleting it warns about nothing.
+    await page.click("#settings-btn");
+    await page.locator('.model-row[data-model="mathcraft-formula-rec"] .model-delete').click();
+    await expect(page.locator("#ask-text")).toHaveText("删除“公式识别”模型？需要时可重新下载（104 MB）。");
   });
 
   test("the model list follows the selected backend before saving", async ({ page }) => {
@@ -420,7 +452,7 @@ test.describe("settings", () => {
     await expect(row("mathcraft-text-det").locator(".model-state")).toHaveText(/下载中 \d+%/);
     await expect(row("mathcraft-text-det").locator(".model-state")).toHaveText("已下载");
     await expect(row("mathcraft-text-det").locator(".model-download")).toHaveText("重新下载");
-    await expect(page.locator("#models-count")).toHaveText("已下载 2/4");
+    await expect(page.locator("#models-count")).toHaveText("已下载 2/5");
     await expect(page.locator(".toast").last()).toContainText("文字检测 已下载");
     await expect(page.locator("#status")).toContainText("需下载模型");
 
@@ -469,7 +501,7 @@ test.describe("settings", () => {
     await expect(page.locator("#models-dialog")).toBeHidden();
     await page.click("#settings-btn");
     await expect(page.locator('.model-row[data-model="mathcraft-formula-rec"] .model-state')).toHaveText("已下载");
-    await expect(page.locator("#models-count")).toHaveText("已下载 1/4");
+    await expect(page.locator("#models-count")).toHaveText("已下载 1/5");
   });
 
   test("downloaded models get a red delete button on the right", async ({ page }) => {
@@ -524,7 +556,7 @@ test.describe("settings", () => {
     await expect(row.locator(".model-state")).toHaveText("未下载");
     await expect(row.locator(".model-delete")).toBeHidden();
     await expect(row.locator(".model-download")).toHaveText("下载");
-    await expect(page.locator("#models-count")).toHaveText("已下载 3/4");
+    await expect(page.locator("#models-count")).toHaveText("已下载 4/5");
     await expect(page.locator(".toast").last()).toContainText("公式识别 已删除");
     await expect(page.locator("#settings-dialog")).toBeVisible(); // still in Settings
     await expect(page.locator("#status")).toContainText("需下载模型"); // formula mode lost its model
@@ -562,7 +594,7 @@ test.describe("settings", () => {
   test("model rows are translated", async ({ page }) => {
     await open(page, { settings: { language: "en" }, models: { formula: true, mixed: false, text: false } });
     await page.click("#settings-btn");
-    await expect(page.locator("#models-count")).toHaveText("1 of 4 downloaded");
+    await expect(page.locator("#models-count")).toHaveText("1 of 5 downloaded");
     const det = page.locator('.model-row[data-model="mathcraft-text-det"]');
     await expect(det.locator(".model-name")).toHaveText("Text detection");
     await expect(det.locator(".model-use")).toHaveText("Used by: Mixed, Text");

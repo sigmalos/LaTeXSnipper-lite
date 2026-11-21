@@ -9,6 +9,7 @@ import type { Entry, Kind, Mode } from "./format";
 export interface Settings {
   mode: Mode;
   backend: "builtin" | "external";
+  formula_model: "standard" | "int8";
   theme: "auto" | "light" | "dark";
   language: "zh" | "en";
   hotkey: string;

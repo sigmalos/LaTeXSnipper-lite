@@ -5,7 +5,7 @@
 //! test is skipped (with a notice) when they are not installed.
 
 use latexsnipper_lib::commands::{model_status, Core};
-use latexsnipper_lib::ocr::Mode;
+use latexsnipper_lib::ocr::{FormulaModel, Mode};
 use std::path::{Path, PathBuf};
 
 fn fixtures() -> PathBuf {
@@ -37,7 +37,10 @@ fn core_with_models() -> Option<(tempfile::TempDir, Core)> {
     let models = std::env::var("LATEXSNIPPER_MODELS")
         .map(PathBuf::from)
         .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
-    if !model_status(&models).values().all(|v| *v) {
+    if !model_status(&models, FormulaModel::Standard)
+        .values()
+        .all(|v| *v)
+    {
         eprintln!(
             "SKIP: MathCraft models not found under {}",
             models.display()
@@ -137,7 +140,10 @@ fn models_downloaded_after_startup_are_used_without_restart() {
     let source = std::env::var("LATEXSNIPPER_MODELS")
         .map(PathBuf::from)
         .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
-    if !model_status(&source).values().all(|v| *v) {
+    if !model_status(&source, FormulaModel::Standard)
+        .values()
+        .all(|v| *v)
+    {
         eprintln!(
             "SKIP: MathCraft models not found under {}",
             source.display()
@@ -191,7 +197,10 @@ fn deleting_a_model_takes_effect_without_restart() {
     let source = std::env::var("LATEXSNIPPER_MODELS")
         .map(PathBuf::from)
         .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
-    if !model_status(&source).values().all(|v| *v) {
+    if !model_status(&source, FormulaModel::Standard)
+        .values()
+        .all(|v| *v)
+    {
         eprintln!(
             "SKIP: MathCraft models not found under {}",
             source.display()

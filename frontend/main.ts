@@ -27,7 +27,11 @@ import { SpotlightTour, type TourStep } from "./lib/tour";
 import { renderInto, toHtmlDocument, toMathML, toSvg } from "./lib/math";
 
 const DEFAULT_HOTKEY = "CommandOrControl+F";
-const MODEL_SIZE: Record<Mode, string> = { formula: "112 MB", mixed: "210 MB", text: "21 MB" };
+/** Installed size of what each recognition type needs, per formula recognizer. */
+const MODEL_SIZE: Record<Settings["formula_model"], Record<Mode, string>> = {
+  standard: { formula: "112 MB", mixed: "210 MB", text: "21 MB" },
+  int8: { formula: "32 MB", mixed: "130 MB", text: "21 MB" },
+};
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -397,7 +401,7 @@ function openModels(mode: Mode): void {
   downloadMode = mode;
   $("models-text").textContent = t("{mode}识别需要下载 MathCraft 模型（约 {size}），只需下载一次。", {
     mode: modeLabel(mode),
-    size: MODEL_SIZE[mode],
+    size: MODEL_SIZE[snap.settings.formula_model][mode],
   });
   $("models-status").textContent = "";
   $("models-progress").hidden = true;
@@ -505,9 +509,15 @@ async function exportAs(content: string, format: string, ext: string, label: str
 const MODEL_NAMES: [string, string][] = [
   ["mathcraft-formula-det", "公式检测"],
   ["mathcraft-formula-rec", "公式识别"],
+  ["mathcraft-formula-rec-int8", "公式识别(Int8)"],
   ["mathcraft-text-det", "文字检测"],
   ["mathcraft-text-rec", "文字识别"],
 ];
+/** The two builds of the formula recognizer, by the setting that selects each. */
+const FORMULA_REC: Record<string, Settings["formula_model"]> = {
+  "mathcraft-formula-rec": "standard",
+  "mathcraft-formula-rec-int8": "int8",
+};
 const modelName = (id: string) => t(MODEL_NAMES.find(([key]) => key === id)?.[1] ?? id);
 
 type RowState = { downloading: boolean; deleting: boolean; done: number; total: number; failed: string | null };
@@ -624,11 +634,12 @@ async function deleteOne(id: string): Promise<void> {
   const s = rowState(m);
   if (s.downloading || s.deleting) return;
   const modes = m.used_by.map(modeLabel).join(getLang() === "zh" ? "、" : ", ");
-  const question = t("删除“{name}”模型？{modes}识别将无法使用，需要时可重新下载（{size}）。", {
-    name: modelName(id),
-    modes,
-    size: formatBytes(m.download_bytes),
-  });
+  const vars = { name: modelName(id), modes, size: formatBytes(m.download_bytes) };
+  // The formula recognizer that is not selected in Settings is not in use.
+  const unused = id in FORMULA_REC && FORMULA_REC[id] !== snap.settings.formula_model;
+  const question = unused
+    ? t("删除“{name}”模型？需要时可重新下载（{size}）。", vars)
+    : t("删除“{name}”模型？{modes}识别将无法使用，需要时可重新下载（{size}）。", vars);
   if ((await ask(question, t("删除"), undefined, true)) === null) return;
   s.deleting = true;
   s.failed = null;
@@ -663,6 +674,7 @@ function readSettingsForm(): Settings {
     ...snap.settings,
     mode: fd.get("mode") as Mode,
     backend: fd.get("backend") as Settings["backend"],
+    formula_model: fd.get("formula_model") as Settings["formula_model"],
     theme: fd.get("theme") as Settings["theme"],
     language: fd.get("language") as Settings["language"],
     pdf_dpi: Number(fd.get("pdf_dpi")) || 200,
@@ -722,9 +734,12 @@ $<HTMLDialogElement>("settings-dialog").addEventListener("close", async () => {
     return;
   }
   try {
+    const before = snap.settings.formula_model;
     snap.settings = await api.saveSettings(readSettingsForm());
     applyTheme(snap.settings.theme);
     applyLanguage();
+    // Which recognition types are ready depends on the selected formula recognizer.
+    if (snap.settings.formula_model !== before) applyModels(await api.listModels());
     toast(t("设置已保存"));
   } catch (e) {
     applyTheme(snap.settings.theme);

@@ -102,7 +102,9 @@ pub fn run() {
             let warm = core.clone();
             std::thread::spawn(move || {
                 let engine = warm.engine();
-                if commands::model_status(engine.root()).get("formula") == Some(&true) {
+                if commands::model_status(engine.root(), engine.formula_model()).get("formula")
+                    == Some(&true)
+                {
                     let _ = engine.warmup_formula();
                 }
             });

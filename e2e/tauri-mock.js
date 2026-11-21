@@ -6,15 +6,25 @@
   const listeners = new Map(); // event -> [callbackId]
   let nextId = 1;
 
-  const ALL_MODELS = ["mathcraft-formula-det", "mathcraft-formula-rec", "mathcraft-text-det", "mathcraft-text-rec"];
-  const REQUIRED = {
-    formula: ["mathcraft-formula-rec"],
-    mixed: ALL_MODELS,
+  const ALL_MODELS = [
+    "mathcraft-formula-det",
+    "mathcraft-formula-rec",
+    "mathcraft-formula-rec-int8",
+    "mathcraft-text-det",
+    "mathcraft-text-rec",
+  ];
+  const FORMULA_REC = { standard: "mathcraft-formula-rec", int8: "mathcraft-formula-rec-int8" };
+  // Models each recognition type loads with the given formula recognizer.
+  const required = (formula = state.settings.formula_model) => ({
+    formula: [FORMULA_REC[formula]],
+    mixed: ["mathcraft-formula-det", FORMULA_REC[formula], "mathcraft-text-det", "mathcraft-text-rec"],
     text: ["mathcraft-text-det", "mathcraft-text-rec"],
-  };
+  });
+  const usesModel = (mode, id) => Object.keys(FORMULA_REC).some((f) => required(f)[mode].includes(id));
   const SIZES = {
     "mathcraft-formula-det": 67531517,
     "mathcraft-formula-rec": 108795631,
+    "mathcraft-formula-rec-int8": 24695733,
     "mathcraft-text-det": 4533780,
     "mathcraft-text-rec": 14102746,
   };
@@ -23,6 +33,7 @@
     settings: {
       mode: "formula",
       backend: "builtin",
+      formula_model: "standard",
       theme: "light",
       language: "zh",
       hotkey: "CommandOrControl+F",
@@ -41,7 +52,7 @@
     // Seeds may describe ready recognition types ({formula: true, ...}); derive the files.
     installed: new Set(
       seed.installedModels ??
-        (seed.models ? ALL_MODELS.filter((id) => Object.entries(seed.models).some(([m, on]) => on && REQUIRED[m].includes(id))) : ALL_MODELS),
+        (seed.models ? ALL_MODELS.filter((id) => Object.entries(seed.models).some(([m, on]) => on && required(seed.settings?.formula_model ?? "standard")[m].includes(id))) : ALL_MODELS),
     ),
     downloading: new Set(),
     // ids whose next download fails once (or every download when downloadFails is true)
@@ -63,7 +74,7 @@
 
   function modes() {
     const out = {};
-    for (const [m, ids] of Object.entries(REQUIRED)) out[m] = ids.every((id) => state.installed.has(id));
+    for (const [m, ids] of Object.entries(required())) out[m] = ids.every((id) => state.installed.has(id));
     return out;
   }
   function modelsState() {
@@ -73,7 +84,7 @@
         installed: state.installed.has(id),
         downloading: state.downloading.has(id),
         download_bytes: SIZES[id],
-        used_by: Object.keys(REQUIRED).filter((m) => REQUIRED[m].includes(id)),
+        used_by: Object.keys(required()).filter((m) => usesModel(m, id)),
       })),
       modes: modes(),
     };
@@ -106,7 +117,7 @@
     if (o === null) return null;
     if (o.error) throw o.error;
     if (state.settings.backend === "builtin") {
-      const missing = REQUIRED[mode].filter((id) => !state.installed.has(id));
+      const missing = required()[mode].filter((id) => !state.installed.has(id));
       if (missing.length) throw `MODELS_MISSING:${missing.join(",")}`;
     }
     return { text: o.text, score: o.score ?? 0.97, mode, flags: o.flags || [], kind: kindFor(mode) };
@@ -153,7 +164,7 @@
     },
     recognize_file: ({ mode }) => nextOutcome(mode || state.settings.mode),
     download_models: async ({ mode }) => {
-      for (const id of REQUIRED[mode]) if (!state.installed.has(id)) await downloadOne(id);
+      for (const id of required()[mode]) if (!state.installed.has(id)) await downloadOne(id);
       return modelsState();
     },
     list_models: () => modelsState(),

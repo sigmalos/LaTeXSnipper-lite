@@ -30,18 +30,46 @@ pub enum Mode {
     Text,
 }
 
-impl Mode {
-    pub fn required_models(self) -> &'static [&'static str] {
+/// Which build of the formula recognizer the engine loads.
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum FormulaModel {
+    /// FP32 `mathcraft-formula-rec`.
+    #[default]
+    Standard,
+    /// Dynamically quantized `mathcraft-formula-rec-int8`.
+    Int8,
+}
+
+impl FormulaModel {
+    pub fn model_id(self) -> &'static str {
         match self {
-            Mode::Formula => &[models::FORMULA_REC],
-            Mode::Mixed => &[
+            FormulaModel::Standard => models::FORMULA_REC,
+            FormulaModel::Int8 => models::FORMULA_REC_INT8,
+        }
+    }
+}
+
+impl Mode {
+    /// The models this mode loads when the given formula recognizer is selected.
+    pub fn required_models(self, formula: FormulaModel) -> Vec<&'static str> {
+        match self {
+            Mode::Formula => vec![formula.model_id()],
+            Mode::Mixed => vec![
                 models::FORMULA_DET,
-                models::FORMULA_REC,
+                formula.model_id(),
                 models::TEXT_DET,
                 models::TEXT_REC,
             ],
-            Mode::Text => &[models::TEXT_DET, models::TEXT_REC],
+            Mode::Text => vec![models::TEXT_DET, models::TEXT_REC],
         }
+    }
+
+    /// Whether this mode can use `model` with either formula recognizer.
+    pub fn uses_model(self, model: &str) -> bool {
+        [FormulaModel::Standard, FormulaModel::Int8]
+            .into_iter()
+            .any(|f| self.required_models(f).contains(&model))
     }
 }
 
@@ -59,6 +87,7 @@ const FORMULA_DOMINANT_COVERAGE: f64 = 0.95;
 
 pub struct Engine {
     root: PathBuf,
+    formula_model: FormulaModel,
     formula_det: FormulaDetector,
     formula_rec: FormulaRecognizer,
     text_det: TextDetector,
@@ -66,12 +95,18 @@ pub struct Engine {
 }
 
 impl Engine {
+    /// An engine using the standard (FP32) formula recognizer.
     pub fn new(model_root: &Path) -> Self {
+        Self::with_formula_model(model_root, FormulaModel::Standard)
+    }
+
+    pub fn with_formula_model(model_root: &Path, formula_model: FormulaModel) -> Self {
         let dir = |id: &str| model_root.join(id);
         Self {
             root: model_root.to_path_buf(),
+            formula_model,
             formula_det: FormulaDetector::new(dir(models::FORMULA_DET)),
-            formula_rec: FormulaRecognizer::new(dir(models::FORMULA_REC)),
+            formula_rec: FormulaRecognizer::new(dir(formula_model.model_id())),
             text_det: TextDetector::new(dir(models::TEXT_DET)),
             text_rec: TextRecognizer::new(dir(models::TEXT_REC)),
         }
@@ -79,6 +114,10 @@ impl Engine {
 
     pub fn root(&self) -> &Path {
         &self.root
+    }
+
+    pub fn formula_model(&self) -> FormulaModel {
+        self.formula_model
     }
 
     pub fn warmup_formula(&self) -> Result<()> {
@@ -445,8 +484,26 @@ mod tests {
 
     #[test]
     fn modes_list_required_models() {
-        assert_eq!(Mode::Formula.required_models(), &[models::FORMULA_REC]);
-        assert_eq!(Mode::Mixed.required_models().len(), 4);
+        use FormulaModel::{Int8, Standard};
+        assert_eq!(
+            Mode::Formula.required_models(Standard),
+            [models::FORMULA_REC]
+        );
+        assert_eq!(
+            Mode::Formula.required_models(Int8),
+            [models::FORMULA_REC_INT8]
+        );
+        assert_eq!(Mode::Mixed.required_models(Standard).len(), 4);
+        assert!(Mode::Mixed
+            .required_models(Int8)
+            .contains(&models::FORMULA_REC_INT8));
+        assert_eq!(
+            Mode::Text.required_models(Int8),
+            Mode::Text.required_models(Standard)
+        );
+        assert!(Mode::Formula.uses_model(models::FORMULA_REC_INT8));
+        assert!(Mode::Mixed.uses_model(models::FORMULA_REC));
+        assert!(!Mode::Text.uses_model(models::FORMULA_REC_INT8));
     }
 
     #[test]

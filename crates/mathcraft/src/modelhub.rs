@@ -14,9 +14,10 @@ const MANIFEST: &str = include_str!("../resources/models.json");
 
 /// Every model the app knows, in display order, with its archive size
 /// (Content-Length of the v1.0.0 release asset) for the download button.
-pub const CATALOG: [(&str, u64); 4] = [
+pub const CATALOG: [(&str, u64); 5] = [
     ("mathcraft-formula-det", 67_531_517),
     ("mathcraft-formula-rec", 108_795_631),
+    ("mathcraft-formula-rec-int8", 24_695_733),
     ("mathcraft-text-det", 4_533_780),
     ("mathcraft-text-rec", 14_102_746),
 ];
@@ -199,6 +200,7 @@ mod tests {
         for m in [
             "mathcraft-formula-det",
             "mathcraft-formula-rec",
+            "mathcraft-formula-rec-int8",
             "mathcraft-text-det",
             "mathcraft-text-rec",
         ] {

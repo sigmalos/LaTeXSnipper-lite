@@ -709,6 +709,9 @@ input[type="radio"] {
   padding: 8px 0 6px 12px;
   border-left: 2px solid var(--ink-wash);
 }
+.formula-model {
+  margin-bottom: 8px;
+}
 .models-head {
   display: flex;
   justify-content: space-between;

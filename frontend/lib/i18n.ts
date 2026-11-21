@@ -150,6 +150,10 @@ const EN: Record<string, string> = {
   "已下载 {n}/{total}": "{n} of {total} downloaded",
   "公式检测": "Formula detection",
   "公式识别": "Formula recognition",
+  "公式识别(Int8)": "Formula recognition (Int8)",
+  "公式识别模型": "Formula recognizer",
+  "标准": "Standard",
+  "Int8（更小更快）": "Int8 (smaller, faster)",
   "文字检测": "Text detection",
   "文字识别": "Text recognition",
   "用于：{modes}": "Used by: {modes}",
@@ -164,6 +168,7 @@ const EN: Record<string, string> = {
   "该模型正在下载": "This model is already downloading",
   "删除“{name}”模型？{modes}识别将无法使用，需要时可重新下载（{size}）。":
     "Delete the {name} model? {modes} recognition won’t work until you download it again ({size}).",
+  "删除“{name}”模型？需要时可重新下载（{size}）。": "Delete the {name} model? You can download it again later ({size}).",
   "{name} 已删除": "{name} deleted",
   "删除失败：{error}": "Delete failed: {error}",
 };

@@ -1,4 +1,4 @@
-//! ONNX Runtime wrappers for the four MathCraft models.
+//! ONNX Runtime wrappers for the MathCraft models.
 
 use super::geometry::{components, min_area_rect, mini_box, point_in_polygon, unclip_rect, Pt};
 use super::gpu::{self, Gpu};
@@ -16,6 +16,8 @@ use std::sync::{Mutex, OnceLock};
 
 pub const FORMULA_DET: &str = "mathcraft-formula-det";
 pub const FORMULA_REC: &str = "mathcraft-formula-rec";
+/// Dynamically quantized (Int8) build of the formula recognizer: same files, smaller and faster.
+pub const FORMULA_REC_INT8: &str = "mathcraft-formula-rec-int8";
 pub const TEXT_DET: &str = "mathcraft-text-det";
 pub const TEXT_REC: &str = "mathcraft-text-rec";
 pub const MAX_NEW_TOKENS: usize = 512;
