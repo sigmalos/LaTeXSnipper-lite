@@ -1,13 +1,19 @@
 //! Tray integration, background running, and the macOS capture hotkey.
 
+use crate::commands::RecognizeResult;
 use crate::store::Settings;
+use std::sync::Mutex;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::{
+    AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder,
+};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut};
 
 pub const TRAY_ID: &str = "latexsnipper";
 pub const MAIN: &str = "main";
+/// Small window that reviews a capture taken while the main window was hidden.
+pub const RESULT: &str = "result";
 pub const CAPTURE_SUPPORTED: bool = cfg!(target_os = "macos");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -104,6 +110,64 @@ pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
         let _ = w.unminimize();
         let _ = w.show();
         let _ = w.set_focus();
+    }
+}
+
+/// A background capture's result, waiting for the result window to take it.
+#[derive(Default)]
+pub struct PendingResult(pub Mutex<Option<RecognizeResult>>);
+
+/// Review a capture in the result window only, leaving the main window hidden.
+/// The page takes the result, renders it, then shows itself (`present_result`).
+pub fn open_result<R: Runtime>(app: &AppHandle<R>, result: RecognizeResult) -> tauri::Result<()> {
+    *app.state::<PendingResult>()
+        .0
+        .lock()
+        .unwrap_or_else(|p| p.into_inner()) = Some(result);
+    if app.get_webview_window(RESULT).is_some() {
+        return app.emit_to(RESULT, "result-ready", ());
+    }
+    let builder = WebviewWindowBuilder::new(app, RESULT, WebviewUrl::App("result.html".into()))
+        .title("LaTeXSnipper")
+        .inner_size(560.0, 460.0)
+        .min_inner_size(420.0, 380.0)
+        .center()
+        .always_on_top(true)
+        .visible(false);
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true);
+    builder.build().map(drop)
+}
+
+/// The result window, if it is on screen.
+pub fn visible_result<R: Runtime>(app: &AppHandle<R>) -> Option<WebviewWindow<R>> {
+    app.get_webview_window(RESULT)
+        .filter(|w| w.is_visible().unwrap_or(false))
+}
+
+pub fn present_result<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(w) = app.get_webview_window(RESULT) {
+        let _ = w.show();
+        let _ = w.set_focus();
+    }
+}
+
+/// Hide the result window. With the main window also hidden, hand focus back
+/// to the app the capture came from so the copied LaTeX can be pasted there.
+pub fn dismiss_result<R: Runtime>(app: &AppHandle<R>) {
+    if let Some(w) = app.get_webview_window(RESULT) {
+        let _ = w.hide();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let main_visible = app
+            .get_webview_window(MAIN)
+            .is_some_and(|w| w.is_visible().unwrap_or(false));
+        if !main_visible {
+            let _ = app.hide();
+        }
     }
 }
 

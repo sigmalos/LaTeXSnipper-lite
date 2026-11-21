@@ -432,24 +432,80 @@ pub async fn capture(
     let was_visible = window
         .as_ref()
         .is_some_and(|w| w.is_visible().unwrap_or(false));
+    // A result still under review from an earlier background capture.
+    let reviewing = crate::shell::visible_result(&app);
     if was_visible {
         let _ = window.as_ref().map(|w| w.hide());
-        // Let the window finish ordering out so it is not in the screenshot.
+    }
+    if let Some(w) = &reviewing {
+        let _ = w.hide();
+    }
+    if was_visible || reviewing.is_some() {
+        // Let the windows finish ordering out so they are not in the screenshot.
         std::thread::sleep(std::time::Duration::from_millis(180));
     }
     let shot = tauri::async_runtime::spawn_blocking(screencapture)
         .await
         .map_err(|e| e.to_string())?;
     let got_image = matches!(shot, Ok(Some(_)));
-    // Show the window for the result dialog; a cancelled background capture stays hidden.
-    if was_visible || got_image {
+    if was_visible {
         crate::shell::show_main(&app);
+    } else if !got_image && reviewing.is_some() {
+        // Cancelled: bring back the result that was being reviewed.
+        crate::shell::present_result(&app);
     }
     let Some(bytes) = shot.map_err(err)? else {
         return Ok(None);
     };
     let core = core.inner().clone();
-    blocking(move || core.recognize_bytes(&bytes, mode).map(Some)).await
+    let result = blocking(move || core.recognize_bytes(&bytes, mode)).await;
+    if was_visible {
+        return result.map(Some);
+    }
+    // Captured from the background: review it in the result window alone.
+    match result {
+        Ok(r) => {
+            crate::shell::open_result(&app, r).map_err(|e| e.to_string())?;
+            Ok(None)
+        }
+        Err(e) => {
+            // Errors and the model download prompt live in the main window.
+            crate::shell::show_main(&app);
+            Err(e)
+        }
+    }
+}
+
+/// What the result window shows: the capture and the look it should match.
+#[derive(Serialize, Debug)]
+pub struct PendingView {
+    pub result: RecognizeResult,
+    pub theme: String,
+    pub language: String,
+}
+
+#[tauri::command]
+pub fn take_result(
+    core: State<'_, Arc<Core>>,
+    pending: State<'_, crate::shell::PendingResult>,
+) -> Option<PendingView> {
+    let result = pending.0.lock().unwrap_or_else(|p| p.into_inner()).take()?;
+    let s = core.settings();
+    Some(PendingView {
+        result,
+        theme: s.theme,
+        language: s.language,
+    })
+}
+
+#[tauri::command]
+pub fn present_result(app: AppHandle) {
+    crate::shell::present_result(&app);
+}
+
+#[tauri::command]
+pub fn dismiss_result(app: AppHandle) {
+    crate::shell::dismiss_result(&app);
 }
 
 #[tauri::command]

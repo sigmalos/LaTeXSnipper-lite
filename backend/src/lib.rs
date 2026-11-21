@@ -9,7 +9,7 @@ pub use mathcraft::{modelhub, ocr};
 use commands::Core;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{Emitter, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 use tauri_plugin_global_shortcut::ShortcutState;
 
 /// `LATEXSNIPPER_HEADLESS=1`: start without a window, Dock icon, menu bar item
@@ -69,12 +69,18 @@ pub fn run() {
                 .build(),
         )
         .manage(core.clone())
+        .manage(shell::PendingResult::default())
         .on_window_event(|window, event| {
-            // Closing the main window keeps the app running in the tray.
             if let WindowEvent::CloseRequested { api, .. } = event {
+                // Closing the main window keeps the app running in the tray.
                 if window.label() == shell::MAIN {
                     api.prevent_close();
                     let _ = window.hide();
+                }
+                // Closing the result window cancels the review; the window is reused.
+                if window.label() == shell::RESULT {
+                    api.prevent_close();
+                    shell::dismiss_result(window.app_handle());
                 }
             }
         })
@@ -108,6 +114,9 @@ pub fn run() {
             commands::recognize_image,
             commands::recognize_file,
             commands::capture,
+            commands::take_result,
+            commands::present_result,
+            commands::dismiss_result,
             commands::download_models,
             commands::list_models,
             commands::download_model,

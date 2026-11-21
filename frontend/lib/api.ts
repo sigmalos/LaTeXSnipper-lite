@@ -1,6 +1,6 @@
 // Typed wrappers around the Rust commands in backend/src/commands.rs.
 import { invoke } from "@tauri-apps/api/core";
-import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { save } from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -43,6 +43,20 @@ export interface Recognition {
   kind: Kind;
 }
 
+/** A background capture waiting in the result window. */
+export interface PendingView {
+  result: Recognition;
+  theme: Settings["theme"];
+  language: Settings["language"];
+}
+
+/** Sent by the result window once its result is copied and saved to history. */
+export interface ConfirmedResult {
+  text: string;
+  kind: Kind;
+  history: Entry[];
+}
+
 export interface ModelInfo {
   id: string;
   installed: boolean;
@@ -69,7 +83,12 @@ export const api = {
   saveSettings: (settings: Settings) => invoke<Settings>("save_settings", { settings }),
   recognizeImage: (data: string, mode?: Mode) => invoke<Recognition>("recognize_image", { data, mode }),
   recognizeFile: (path: string, mode?: Mode) => invoke<Recognition>("recognize_file", { path, mode }),
+  /** Null when cancelled, or when the result went to the result window instead. */
   capture: (mode?: Mode) => invoke<Recognition | null>("capture", { mode }),
+  takeResult: () => invoke<PendingView | null>("take_result"),
+  presentResult: () => invoke<void>("present_result"),
+  dismissResult: () => invoke<void>("dismiss_result"),
+  resultConfirmed: (r: ConfirmedResult) => emit("result-confirmed", r),
   downloadModels: (mode: Mode) => invoke<ModelsState>("download_models", { mode }),
   listModels: () => invoke<ModelsState>("list_models"),
   downloadModel: (model: string) => invoke<ModelsState>("download_model", { model }),
@@ -88,6 +107,9 @@ export const api = {
     save({ defaultPath, filters: [{ name: label, extensions: [ext] }] }),
   onProgress: (cb: (p: Progress) => void): Promise<UnlistenFn> => listen<Progress>("model-progress", (e) => cb(e.payload)),
   onHotkey: (cb: () => void): Promise<UnlistenFn> => listen("hotkey-capture", () => cb()),
+  onResultReady: (cb: () => void): Promise<UnlistenFn> => listen("result-ready", () => cb()),
+  onResultConfirmed: (cb: (r: ConfirmedResult) => void): Promise<UnlistenFn> =>
+    listen<ConfirmedResult>("result-confirmed", (e) => cb(e.payload)),
   onOpenSettings: (cb: () => void): Promise<UnlistenFn> => listen("open-settings", () => cb()),
   onDrop: async (cb: (paths: string[]) => void, hover: (on: boolean) => void): Promise<void> => {
     const { getCurrentWebview } = await import("@tauri-apps/api/webview");

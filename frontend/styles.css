@@ -611,7 +611,8 @@ dialog form {
   flex-direction: column;
   gap: 12px;
 }
-dialog footer {
+dialog footer,
+.result-page footer {
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -938,6 +939,29 @@ progress::-webkit-progress-value {
 .hand-result .paper.small {
   flex: 1;
   max-height: none;
+}
+
+/* ---------------------------------------------------------- result window */
+
+body.result-window {
+  background: var(--surface);
+}
+.result-page {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  padding: 34px 22px 16px;
+}
+.result-page .editor.compact {
+  max-height: none;
+}
+.result-page .paper.small {
+  flex: 1;
+  max-height: none;
+}
+.result-page footer {
+  margin-top: auto;
 }
 
 /* ---------------------------------------------------------- spotlight tour */

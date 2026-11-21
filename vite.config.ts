@@ -1,5 +1,8 @@
 /// <reference types="vitest/config" />
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
+
+const page = (name: string) => fileURLToPath(new URL(name, import.meta.url));
 
 export default defineConfig({
   clearScreen: false,
@@ -10,6 +13,8 @@ export default defineConfig({
     outDir: "dist",
     emptyOutDir: true,
     chunkSizeWarningLimit: 2600,
+    // The result window (result.html) is its own page next to the main one.
+    rollupOptions: { input: { main: page("index.html"), result: page("result.html") } },
   },
   test: {
     environment: "jsdom",

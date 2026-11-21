@@ -1120,6 +1120,12 @@ async function boot(): Promise<void> {
   const last = snap.history[snap.history.length - 1];
   if (last) loadIntoEditor(last.text, last.kind);
   if (snap.capture_supported) await api.onHotkey(capture);
+  // A capture reviewed in the result window while this window was hidden.
+  await api.onResultConfirmed(({ text, kind, history }) => {
+    snap.history = history;
+    loadIntoEditor(text, kind);
+    renderHistory();
+  });
   await api.onOpenSettings(openSettings);
   await api.onProgress((p) => {
     const s = rowStates.get(p.model);

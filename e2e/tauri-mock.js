@@ -53,6 +53,10 @@
     // queue of scripted outcomes for capture / recognize: {text, score?, flags?} | null | {error}
     outcomes: seed.outcomes || [],
     savePath: seed.savePath ?? "/tmp/out.file",
+    // result window: the background capture it takes, and whether it is on screen
+    pendingResult: seed.pendingResult ?? null,
+    resultShown: false,
+    emitted: [],
     exported: [],
   };
   window.__mock = state;
@@ -179,6 +183,18 @@
     resume_hotkey: () => {
       state.hotkeySuspended = false;
     },
+    take_result: () => {
+      const result = state.pendingResult;
+      state.pendingResult = null;
+      if (!result) return null;
+      return { result: { score: 0.97, mode: "formula", flags: [], kind: "mathcraft", ...result }, theme: state.settings.theme, language: state.settings.language };
+    },
+    present_result: () => {
+      state.resultShown = true;
+    },
+    dismiss_result: () => {
+      state.resultShown = false;
+    },
     history_op: (a) => listOp(state.history, a, true),
     favorite_op: (a) => listOp(state.favorites, a, false),
     "plugin:clipboard-manager|write_text": ({ text }) => {
@@ -192,6 +208,10 @@
       if (!listeners.has(event)) listeners.set(event, []);
       listeners.get(event).push(handler);
       return handler;
+    },
+    "plugin:event|emit": ({ event, payload }) => {
+      state.emitted.push({ event, payload: structuredClone(payload) });
+      emit(event, payload);
     },
     "plugin:event|unlisten": ({ event, eventId }) => {
       listeners.set(event, (listeners.get(event) || []).filter((id) => id !== eventId));

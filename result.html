@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LaTeXSnipper</title>
+    <link rel="stylesheet" href="/frontend/styles.css" />
+  </head>
+  <body class="result-window">
+    <div class="titlebar" data-tauri-drag-region></div>
+    <!-- Reviews a capture taken while the main window was hidden (frontend/result.ts). -->
+    <form class="result-page" id="result-form">
+      <h3 data-i18n="识别结果">识别结果</h3>
+      <p class="hint" data-i18n="确认或修改结果：">确认或修改结果：</p>
+      <textarea id="result-text" class="editor compact" spellcheck="false"></textarea>
+      <div class="paper small"><div class="preview" id="result-preview"></div></div>
+      <p class="warn" id="result-warn" hidden></p>
+      <footer>
+        <button class="btn quiet" type="button" id="result-cancel" data-i18n="取消">取消</button>
+        <button class="btn primary" type="submit" id="result-confirm" data-i18n="确认并复制">确认并复制</button>
+      </footer>
+    </form>
+    <script type="module" src="/frontend/result.ts"></script>
+  </body>
+</html>

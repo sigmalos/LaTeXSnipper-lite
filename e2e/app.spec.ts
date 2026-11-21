@@ -43,6 +43,49 @@ test.describe("main window", () => {
   });
 });
 
+test.describe("result window (capture while the main window is hidden)", () => {
+  async function openResult(page: Page, seed: Seed): Promise<void> {
+    await page.addInitScript((s) => ((window as unknown as { __MOCK_SEED__: Seed }).__MOCK_SEED__ = s), seed);
+    await page.addInitScript({ path: path.join(here, "tauri-mock.js") });
+    await page.goto("/result.html");
+  }
+
+  test("shows the result alone, then confirm copies, records history and tells the main window", async ({ page }) => {
+    await openResult(page, { pendingResult: { text: "\\sqrt{x}" } });
+    await expect(page.locator("#result-text")).toHaveValue("\\sqrt{x}");
+    await expect(page.locator("#result-preview mjx-container")).toBeVisible();
+    await expect.poll(() => mock<boolean>(page, "resultShown")).toBe(true);
+    await expect(page.locator("#result-warn")).toBeHidden();
+    await page.fill("#result-text", "\\sqrt{y}");
+    await page.click("#result-confirm");
+    await expect.poll(() => mock<boolean>(page, "resultShown")).toBe(false);
+    expect(await mock<string>(page, "clipboard")).toBe("\\sqrt{y}");
+    expect(await mock<{ text: string }[]>(page, "history")).toEqual([{ text: "\\sqrt{y}", name: "", kind: "mathcraft" }]);
+    const sent = await mock<{ event: string; payload: { text: string } }[]>(page, "emitted");
+    expect(sent.map((e) => [e.event, e.payload.text])).toEqual([["result-confirmed", "\\sqrt{y}"]]);
+  });
+
+  test("Escape cancels without copying or recording", async ({ page }) => {
+    await openResult(page, { pendingResult: { text: "a", score: 0.4, flags: ["unbalanced_group"] }, settings: { language: "en" } });
+    await expect(page.locator("#result-warn")).toContainText("unbalanced_group");
+    await expect(page.locator("#result-confirm")).toHaveText("Confirm and copy");
+    await expect.poll(() => mock<boolean>(page, "resultShown")).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => mock<boolean>(page, "resultShown")).toBe(false);
+    expect(await mock<string>(page, "clipboard")).toBe("");
+    expect(await mock<unknown[]>(page, "history")).toEqual([]);
+  });
+
+  test("the main window picks up a result confirmed there", async ({ page }) => {
+    await open(page);
+    await page.evaluate(() =>
+      (window as any).__mock.emit("result-confirmed", { text: "e^{x}", kind: "mathcraft", history: [{ text: "e^{x}", name: "", kind: "mathcraft" }] }),
+    );
+    await expect(historyRows(page)).toHaveCount(1);
+    await expect(page.locator("#editor")).toHaveValue("e^{x}");
+  });
+});
+
 test.describe("recognition", () => {
   test("capture → review → confirm copies and records history", async ({ page }) => {
     await open(page, { outcomes: [{ text: "\\sqrt{x}" }] });
