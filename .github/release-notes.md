@@ -5,19 +5,13 @@
 
 ### 新功能
 
-- **Word / PowerPoint for Mac 插件重写，不再依赖桌面端**：插件的宿主程序从 Python 改为 Rust，打包成单独的「LaTeXSnipper Office」应用。截图识别直接在插件里完成，使用内置的 MathCraft 引擎，无需另外运行桌面端。插件页面、接口和 Word 中公式的保存格式与原版一致，原版插件插入的公式可以继续编辑。已在 Word 和 PowerPoint 16.115 中验证插入、读取、修改、删除、编号、PNG / SVG 转换和截图识别。
-- **GPU 加速（Windows / Linux）**：Windows 版通过 DirectML 使用显卡（NVIDIA / AMD / Intel，自动选显存最大的一块），所需的 `DirectML.dll` 已随安装包附带。Linux 版在装好 CUDA 12、cuDNN 9，并放入 ONNX Runtime 1.22 的 CUDA 模块后使用 NVIDIA 显卡，步骤见 README。GPU 无法使用或在 GPU 上运行出错时自动改用 CPU；设置环境变量 `LATEXSNIPPER_DEVICE=cpu` 可以强制使用 CPU。macOS 版不变。
-- **快速入门改为界面引导**：原来的四页说明换成七步引导，依次高亮界面上真实的按钮和区域并说明用法。首次启动时出现一次，之后可以点左上角的「?」重看。
+- **可选 Int8 公式识别模型**：「设置 → 识别后端 → 内置 MathCraft」新增「公式识别模型」选项，可以在「标准」和「Int8（更小更快）」之间切换，默认仍是标准版。Int8 是同一公式识别模型的量化版本，下载约 24 MB（标准版约 104 MB），在 CPU 上识别快约一倍，个别符号的识别准确率略低。公式和混合识别使用所选版本，所选版本未下载时识别前会提示下载。模型列表中新增「公式识别(Int8)」一行，可以单独下载或删除，下载时同样逐文件校验 SHA-256。
+- Int8 模型从 Gitee 下载，国内网络无需代理即可下载。
 
 ### 改进与修复
 
-- **后台截图只弹出识别结果窗口（macOS）**：主窗口已关闭或隐藏时，用快捷键（默认 ⌘F）或菜单栏截图，识别成功后之前会把主窗口一起弹出来。现在只弹出一个小的识别结果窗口，点「确认并复制」后结果复制到剪贴板、记入历史，窗口收起，焦点回到截图前正在使用的应用，可以直接粘贴。识别出错或需要下载模型时仍会打开主窗口。
-- **Linux 数据目录改为遵循 XDG 规范**：1.0.0 在 Linux 上误用了 macOS 的路径 `~/Library/Application Support/LaTeXSnipper`，现在改为 `~/.local/share/latexsnipper-lite`（设置了 `XDG_DATA_HOME` 时放在其下）。从 1.0.0 升级请看下方「从 1.0.0 升级」。
-- **导出时能找到 PATH 中的 Pandoc**：之前只在 Homebrew 的安装目录里查找，Windows、Linux 以及其他方式安装的 Pandoc 都找不到，依赖 Pandoc 的导出格式无法使用。
-- **Windows / Linux 托盘图标改为彩色**：之前用的是 macOS 菜单栏的黑色模板图标，在深色任务栏上看不见。
-- **Windows / Linux 界面细节**：快速入门跳过截图识别这一步和只适用于 macOS 的说明；左下角工具栏不再在隐藏的「快捷键」按钮处留下空位。
-- **不再提供 AppImage**：Linux 版只提供 `.deb` 安装包。
-- 安装包文件名统一为 `LaTeXSnipper-Lite_<版本>_<系统>`，每个版本附带 `SHA256SUMS.txt`。所有安装包在发布前都会在对应系统上安装并用真实模型做识别测试。
+- 删除当前未选用的那个公式识别模型时，确认提示不再说公式、混合识别将无法使用。
+- Word / PowerPoint for Mac 插件没有功能变化，版本仍为 {{OFFICE_VERSION}}，继续使用标准版公式识别模型。
 
 ## 下载
 
@@ -34,12 +28,13 @@
 - **Windows 上代替截图识别**：先用系统自带的 **Win + Shift + S** 截图，再回到应用按 **Ctrl + V** 粘贴识别。
 - **Linux**：`sudo apt install ./latexsnipper-lite_{{VERSION}}_amd64.deb`，依赖的 WebKitGTK 等库由 apt 自动安装。
 - **Office 插件**：单独安装，不依赖桌面端。打开 DMG 把「LaTeXSnipper Office」拖进「应用程序」，打开后点「安装」，步骤见 `office_plugin/README.md`。
-- 识别模型不在安装包里，第一次识别时按需下载（只用公式识别约 104 MB），并逐文件校验 SHA-256。
+- 识别模型不在安装包里，第一次识别时按需下载（只用公式识别时，标准版约 104 MB，Int8 版约 24 MB），并逐文件校验 SHA-256。
 
-## 从 1.0.0 升级
+## 升级
 
-- **macOS / Windows**：直接安装新版本即可，模型、历史和收藏都会保留。
-- **Linux**：1.0.0 的 deb 包名是 `la-te-x-snipper`，新版改为 `la-te-x-snipper-lite`，apt 不会把它当作升级。请先卸载旧包、把数据移到新目录，**再第一次启动新版本**：
+- **从 1.1.0 升级**：所有系统直接安装新版本即可，模型、历史、收藏和设置都会保留，公式识别继续使用标准版。
+- **从 1.0.0 升级（macOS / Windows）**：直接安装新版本即可，模型、历史和收藏都会保留。
+- **从 1.0.0 升级（Linux）**：1.0.0 的 deb 包名是 `la-te-x-snipper`，新版改为 `la-te-x-snipper-lite`，apt 不会把它当作升级。请先卸载旧包、把数据移到新目录，**再第一次启动新版本**：
 
   ```sh
   sudo apt remove la-te-x-snipper
