@@ -8,21 +8,30 @@
 
   const ALL_MODELS = [
     "mathcraft-formula-det",
+    "mathcraft-formula-det-int8",
     "mathcraft-formula-rec",
     "mathcraft-formula-rec-int8",
     "mathcraft-text-det",
     "mathcraft-text-rec",
   ];
   const FORMULA_REC = { standard: "mathcraft-formula-rec", int8: "mathcraft-formula-rec-int8" };
-  // Models each recognition type loads with the given formula recognizer.
-  const required = (formula = state.settings.formula_model) => ({
+  const FORMULA_DET = { standard: "mathcraft-formula-det", int8: "mathcraft-formula-det-int8" };
+  // Mirrors effective_builds: the other detector build stands in when only it is installed.
+  const effectiveDet = (det) => {
+    const other = det === "int8" ? "standard" : "int8";
+    return !state.installed.has(FORMULA_DET[det]) && state.installed.has(FORMULA_DET[other]) ? other : det;
+  };
+  // Models each recognition type loads with the given formula recognizer and detector.
+  const required = (formula = state.settings.formula_model, det = effectiveDet(state.settings.det_model)) => ({
     formula: [FORMULA_REC[formula]],
-    mixed: ["mathcraft-formula-det", FORMULA_REC[formula], "mathcraft-text-det", "mathcraft-text-rec"],
+    mixed: [FORMULA_DET[det], FORMULA_REC[formula], "mathcraft-text-det", "mathcraft-text-rec"],
     text: ["mathcraft-text-det", "mathcraft-text-rec"],
   });
-  const usesModel = (mode, id) => Object.keys(FORMULA_REC).some((f) => required(f)[mode].includes(id));
+  const BUILDS = ["standard", "int8"];
+  const usesModel = (mode, id) => BUILDS.some((f) => BUILDS.some((d) => required(f, d)[mode].includes(id)));
   const SIZES = {
     "mathcraft-formula-det": 67531517,
+    "mathcraft-formula-det-int8": 20537681,
     "mathcraft-formula-rec": 108795631,
     "mathcraft-formula-rec-int8": 24695733,
     "mathcraft-text-det": 4533780,
@@ -34,6 +43,7 @@
       mode: "formula",
       backend: "builtin",
       formula_model: "standard",
+      det_model: "standard",
       theme: "light",
       language: "zh",
       hotkey: "CommandOrControl+F",
@@ -52,7 +62,7 @@
     // Seeds may describe ready recognition types ({formula: true, ...}); derive the files.
     installed: new Set(
       seed.installedModels ??
-        (seed.models ? ALL_MODELS.filter((id) => Object.entries(seed.models).some(([m, on]) => on && required(seed.settings?.formula_model ?? "standard")[m].includes(id))) : ALL_MODELS),
+        (seed.models ? ALL_MODELS.filter((id) => Object.entries(seed.models).some(([m, on]) => on && required(seed.settings?.formula_model ?? "standard", seed.settings?.det_model ?? "standard")[m].includes(id))) : ALL_MODELS),
     ),
     downloading: new Set(),
     // ids whose next download fails once (or every download when downloadFails is true)

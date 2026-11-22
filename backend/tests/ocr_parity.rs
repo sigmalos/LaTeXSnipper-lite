@@ -5,7 +5,7 @@
 //! test is skipped (with a notice) when they are not installed.
 
 use latexsnipper_lib::commands::{model_status, Core};
-use latexsnipper_lib::ocr::{FormulaModel, Mode};
+use latexsnipper_lib::ocr::{imageops, Engine, FormulaBuilds, FormulaModel, Mode};
 use std::path::{Path, PathBuf};
 
 fn fixtures() -> PathBuf {
@@ -37,7 +37,7 @@ fn core_with_models() -> Option<(tempfile::TempDir, Core)> {
     let models = std::env::var("LATEXSNIPPER_MODELS")
         .map(PathBuf::from)
         .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
-    if !model_status(&models, FormulaModel::Standard)
+    if !model_status(&models, FormulaBuilds::default())
         .values()
         .all(|v| *v)
     {
@@ -78,6 +78,34 @@ fn matches_python_reference_for_every_mode() {
             got.recognition.score
         );
     }
+}
+
+/// The Int8 formula detector finds the same formulas as the FP32 one on the
+/// mixed fixture, so mixed mode still reproduces the Python reference.
+#[test]
+fn int8_detector_matches_python_reference_in_mixed_mode() {
+    let models = std::env::var("LATEXSNIPPER_MODELS")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
+    let builds = FormulaBuilds {
+        det: FormulaModel::Int8,
+        rec: FormulaModel::Standard,
+    };
+    if !model_status(&models, builds)["mixed"] {
+        eprintln!(
+            "SKIP: Int8 formula detector or mixed-mode models not found under {}",
+            models.display()
+        );
+        return;
+    }
+    let reference: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(fixtures().join("python_reference.json")).unwrap(),
+    )
+    .unwrap();
+    let engine = Engine::with_builds(&models, builds);
+    let img = imageops::decode_rgb(&std::fs::read(fixtures().join("mixed.png")).unwrap()).unwrap();
+    let got = engine.recognize(&img, Mode::Mixed).unwrap();
+    assert_eq!(got.text, reference["mixed"]["text"].as_str().unwrap());
 }
 
 #[test]
@@ -140,7 +168,7 @@ fn models_downloaded_after_startup_are_used_without_restart() {
     let source = std::env::var("LATEXSNIPPER_MODELS")
         .map(PathBuf::from)
         .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
-    if !model_status(&source, FormulaModel::Standard)
+    if !model_status(&source, FormulaBuilds::default())
         .values()
         .all(|v| *v)
     {
@@ -197,7 +225,7 @@ fn deleting_a_model_takes_effect_without_restart() {
     let source = std::env::var("LATEXSNIPPER_MODELS")
         .map(PathBuf::from)
         .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
-    if !model_status(&source, FormulaModel::Standard)
+    if !model_status(&source, FormulaBuilds::default())
         .values()
         .all(|v| *v)
     {

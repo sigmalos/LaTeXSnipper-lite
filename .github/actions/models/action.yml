@@ -1,6 +1,6 @@
 name: MathCraft models
 description: >
-  Restore the four MathCraft models from the cache, or download them with the
+  Restore the MathCraft models from the cache, or download them with the
   app's own downloader (which verifies every file's SHA-256). Exports
   LATEXSNIPPER_MODELS for the real-model tests and smoke tests.
 runs:
@@ -17,7 +17,7 @@ runs:
       if: steps.cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        for id in mathcraft-formula-det mathcraft-formula-rec mathcraft-text-det mathcraft-text-rec; do
+        for id in mathcraft-formula-det mathcraft-formula-det-int8 mathcraft-formula-rec mathcraft-text-det mathcraft-text-rec; do
           cargo run --quiet --manifest-path backend/Cargo.toml --example download -- .ci-models "$id" | tail -1
         done
 

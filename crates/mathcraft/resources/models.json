@@ -14,6 +14,19 @@
         "https://github.com/SakuraMathcraft/MathCraft-Models/releases/download/v1.0.0/mathcraft-formula-det.zip"
       ]
     },
+    "mathcraft-formula-det-int8": {
+      "version": "1",
+      "runtime": "onnx",
+      "files": [
+        {
+          "path": "mathcraft-mfd.onnx",
+          "sha256": "07c8064ec12c1c5da12804590c0028abe4371371067a597b5670877ad94e5153"
+        }
+      ],
+      "sources": [
+        "https://gitee.com/sigmalyj/mathcraft-lite/releases/download/v1.0.0/mathcraft-formula-det-int8.zip"
+      ]
+    },
     "mathcraft-formula-rec": {
       "version": "1",
       "runtime": "onnx",

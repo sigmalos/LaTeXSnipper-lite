@@ -15,6 +15,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 
 pub const FORMULA_DET: &str = "mathcraft-formula-det";
+/// Dynamically quantized (Int8) build of the formula detector: same file name, smaller and faster.
+pub const FORMULA_DET_INT8: &str = "mathcraft-formula-det-int8";
 pub const FORMULA_REC: &str = "mathcraft-formula-rec";
 /// Dynamically quantized (Int8) build of the formula recognizer: same files, smaller and faster.
 pub const FORMULA_REC_INT8: &str = "mathcraft-formula-rec-int8";

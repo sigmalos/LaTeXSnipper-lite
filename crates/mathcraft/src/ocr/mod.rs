@@ -30,19 +30,36 @@ pub enum Mode {
     Text,
 }
 
-/// Which build of the formula recognizer the engine loads.
+/// Which build of a formula model (detector or recognizer) the engine loads.
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum FormulaModel {
-    /// FP32 `mathcraft-formula-rec`.
+    /// FP32 `mathcraft-formula-det` / `mathcraft-formula-rec`.
     #[default]
     Standard,
-    /// Dynamically quantized `mathcraft-formula-rec-int8`.
+    /// Dynamically quantized `mathcraft-formula-det-int8` / `mathcraft-formula-rec-int8`.
     Int8,
 }
 
 impl FormulaModel {
-    pub fn model_id(self) -> &'static str {
+    const ALL: [FormulaModel; 2] = [FormulaModel::Standard, FormulaModel::Int8];
+
+    /// The other build.
+    pub fn other(self) -> Self {
+        match self {
+            FormulaModel::Standard => FormulaModel::Int8,
+            FormulaModel::Int8 => FormulaModel::Standard,
+        }
+    }
+
+    pub fn det_id(self) -> &'static str {
+        match self {
+            FormulaModel::Standard => models::FORMULA_DET,
+            FormulaModel::Int8 => models::FORMULA_DET_INT8,
+        }
+    }
+
+    pub fn rec_id(self) -> &'static str {
         match self {
             FormulaModel::Standard => models::FORMULA_REC,
             FormulaModel::Int8 => models::FORMULA_REC_INT8,
@@ -50,14 +67,21 @@ impl FormulaModel {
     }
 }
 
+/// The selected builds of the formula detector and the formula recognizer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FormulaBuilds {
+    pub det: FormulaModel,
+    pub rec: FormulaModel,
+}
+
 impl Mode {
-    /// The models this mode loads when the given formula recognizer is selected.
-    pub fn required_models(self, formula: FormulaModel) -> Vec<&'static str> {
+    /// The models this mode loads with the given formula builds.
+    pub fn required_models(self, builds: FormulaBuilds) -> Vec<&'static str> {
         match self {
-            Mode::Formula => vec![formula.model_id()],
+            Mode::Formula => vec![builds.rec.rec_id()],
             Mode::Mixed => vec![
-                models::FORMULA_DET,
-                formula.model_id(),
+                builds.det.det_id(),
+                builds.rec.rec_id(),
                 models::TEXT_DET,
                 models::TEXT_REC,
             ],
@@ -65,11 +89,14 @@ impl Mode {
         }
     }
 
-    /// Whether this mode can use `model` with either formula recognizer.
+    /// Whether this mode can use `model` with some choice of formula builds.
     pub fn uses_model(self, model: &str) -> bool {
-        [FormulaModel::Standard, FormulaModel::Int8]
-            .into_iter()
-            .any(|f| self.required_models(f).contains(&model))
+        FormulaModel::ALL.into_iter().any(|det| {
+            FormulaModel::ALL.into_iter().any(|rec| {
+                self.required_models(FormulaBuilds { det, rec })
+                    .contains(&model)
+            })
+        })
     }
 }
 
@@ -87,7 +114,7 @@ const FORMULA_DOMINANT_COVERAGE: f64 = 0.95;
 
 pub struct Engine {
     root: PathBuf,
-    formula_model: FormulaModel,
+    builds: FormulaBuilds,
     formula_det: FormulaDetector,
     formula_rec: FormulaRecognizer,
     text_det: TextDetector,
@@ -95,18 +122,18 @@ pub struct Engine {
 }
 
 impl Engine {
-    /// An engine using the standard (FP32) formula recognizer.
+    /// An engine using the standard (FP32) formula detector and recognizer.
     pub fn new(model_root: &Path) -> Self {
-        Self::with_formula_model(model_root, FormulaModel::Standard)
+        Self::with_builds(model_root, FormulaBuilds::default())
     }
 
-    pub fn with_formula_model(model_root: &Path, formula_model: FormulaModel) -> Self {
+    pub fn with_builds(model_root: &Path, builds: FormulaBuilds) -> Self {
         let dir = |id: &str| model_root.join(id);
         Self {
             root: model_root.to_path_buf(),
-            formula_model,
-            formula_det: FormulaDetector::new(dir(models::FORMULA_DET)),
-            formula_rec: FormulaRecognizer::new(dir(formula_model.model_id())),
+            builds,
+            formula_det: FormulaDetector::new(dir(builds.det.det_id())),
+            formula_rec: FormulaRecognizer::new(dir(builds.rec.rec_id())),
             text_det: TextDetector::new(dir(models::TEXT_DET)),
             text_rec: TextRecognizer::new(dir(models::TEXT_REC)),
         }
@@ -116,8 +143,8 @@ impl Engine {
         &self.root
     }
 
-    pub fn formula_model(&self) -> FormulaModel {
-        self.formula_model
+    pub fn builds(&self) -> FormulaBuilds {
+        self.builds
     }
 
     pub fn warmup_formula(&self) -> Result<()> {
@@ -485,24 +512,66 @@ mod tests {
     #[test]
     fn modes_list_required_models() {
         use FormulaModel::{Int8, Standard};
+        let standard = FormulaBuilds::default();
+        let int8 = FormulaBuilds {
+            det: Int8,
+            rec: Int8,
+        };
         assert_eq!(
-            Mode::Formula.required_models(Standard),
+            Mode::Formula.required_models(standard),
             [models::FORMULA_REC]
         );
         assert_eq!(
-            Mode::Formula.required_models(Int8),
+            Mode::Formula.required_models(int8),
             [models::FORMULA_REC_INT8]
         );
-        assert_eq!(Mode::Mixed.required_models(Standard).len(), 4);
-        assert!(Mode::Mixed
-            .required_models(Int8)
-            .contains(&models::FORMULA_REC_INT8));
+        // The detector choice never matters to formula mode.
         assert_eq!(
-            Mode::Text.required_models(Int8),
-            Mode::Text.required_models(Standard)
+            Mode::Formula.required_models(FormulaBuilds {
+                det: Int8,
+                rec: Standard
+            }),
+            [models::FORMULA_REC]
+        );
+        assert_eq!(
+            Mode::Mixed.required_models(standard),
+            [
+                models::FORMULA_DET,
+                models::FORMULA_REC,
+                models::TEXT_DET,
+                models::TEXT_REC
+            ]
+        );
+        assert_eq!(
+            Mode::Mixed.required_models(FormulaBuilds {
+                det: Int8,
+                rec: Standard
+            }),
+            [
+                models::FORMULA_DET_INT8,
+                models::FORMULA_REC,
+                models::TEXT_DET,
+                models::TEXT_REC
+            ]
+        );
+        assert_eq!(
+            Mode::Mixed.required_models(int8),
+            [
+                models::FORMULA_DET_INT8,
+                models::FORMULA_REC_INT8,
+                models::TEXT_DET,
+                models::TEXT_REC
+            ]
+        );
+        assert_eq!(
+            Mode::Text.required_models(int8),
+            Mode::Text.required_models(standard)
         );
         assert!(Mode::Formula.uses_model(models::FORMULA_REC_INT8));
         assert!(Mode::Mixed.uses_model(models::FORMULA_REC));
+        assert!(Mode::Mixed.uses_model(models::FORMULA_DET));
+        assert!(Mode::Mixed.uses_model(models::FORMULA_DET_INT8));
+        assert!(!Mode::Formula.uses_model(models::FORMULA_DET_INT8));
         assert!(!Mode::Text.uses_model(models::FORMULA_REC_INT8));
     }
 

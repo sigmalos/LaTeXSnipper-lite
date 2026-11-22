@@ -374,33 +374,75 @@ test.describe("settings", () => {
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 
-  test("built-in backend lists all five models with their download state", async ({ page }) => {
+  test("built-in backend lists all six models with their download state", async ({ page }) => {
     await open(page, { models: { formula: true, mixed: false, text: false } });
     await page.click("#settings-btn");
     const panel = page.locator("#builtin-fields");
     await expect(panel).toBeVisible();
-    await expect(page.locator("#models-count")).toHaveText("已下载 1/5");
+    await expect(page.locator("#models-count")).toHaveText("已下载 1/6");
     const rows = panel.locator(".model-row");
-    await expect(rows).toHaveCount(5);
-    await expect(rows.locator(".model-name")).toHaveText(["公式检测", "公式识别", "公式识别(Int8)", "文字检测", "文字识别"]);
+    await expect(rows).toHaveCount(6);
+    await expect(rows.locator(".model-name")).toHaveText([
+      "公式检测",
+      "公式检测(Int8)",
+      "公式识别",
+      "公式识别(Int8)",
+      "文字检测",
+      "文字识别",
+    ]);
     await expect(rows.locator(".model-use")).toHaveText([
+      "用于：混合",
       "用于：混合",
       "用于：公式、混合",
       "用于：公式、混合",
       "用于：混合、纯文字",
       "用于：混合、纯文字",
     ]);
-    await expect(rows.locator(".model-size")).toHaveText(["64 MB", "104 MB", "24 MB", "4.3 MB", "13 MB"]);
-    await expect(rows.locator(".model-state")).toHaveText(["未下载", "已下载", "未下载", "未下载", "未下载"]);
-    await expect(rows.locator(".model-download")).toHaveText(["下载", "重新下载", "下载", "下载", "下载"]);
+    await expect(rows.locator(".model-size")).toHaveText(["64 MB", "20 MB", "104 MB", "24 MB", "4.3 MB", "13 MB"]);
+    await expect(rows.locator(".model-state")).toHaveText(["未下载", "未下载", "已下载", "未下载", "未下载", "未下载"]);
+    await expect(rows.locator(".model-download")).toHaveText(["下载", "下载", "重新下载", "下载", "下载", "下载"]);
     await expect(page.locator("input[name=formula_model][value=standard]")).toBeChecked();
+    await expect(page.locator("input[name=det_model][value=standard]")).toBeChecked();
+  });
+
+  test("the two formula recognizers have mutually exclusive 选用 buttons, and Int8 explains itself", async ({ page }) => {
+    await open(page, { models: { formula: true, mixed: false, text: false } });
+    await page.click("#settings-btn");
+    const row = (id: string) => page.locator(`.model-row[data-model="${id}"]`);
+    // Only the formula detectors and recognizers can be picked; the old segmented toggle is gone.
+    await expect(page.locator(".model-pick input")).toHaveCount(4);
+    await expect(page.locator("#formula-model-caption")).toHaveCount(0);
+    await expect(row("mathcraft-formula-rec").locator(".model-pick span")).toHaveText("已选用");
+    await expect(row("mathcraft-formula-rec-int8").locator(".model-pick span")).toHaveText("选用");
+
+    await row("mathcraft-formula-rec-int8").locator(".model-pick span").click();
+    await expect(row("mathcraft-formula-rec-int8").locator(".model-pick input")).toBeChecked();
+    await expect(row("mathcraft-formula-rec").locator(".model-pick input")).not.toBeChecked();
+    await expect(row("mathcraft-formula-rec-int8").locator(".model-pick span")).toHaveText("已选用");
+    await expect(row("mathcraft-formula-rec").locator(".model-pick span")).toHaveText("选用");
+
+    // The ? next to the Int8 row shows its trade-offs on hover.
+    const tip = page.locator("#int8-tip-rec");
+    await expect(row("mathcraft-formula-rec").locator(".model-help")).toHaveCount(0);
+    await expect(tip).toBeHidden();
+    await row("mathcraft-formula-rec-int8").locator(".model-help button").hover();
+    await expect(tip).toBeVisible();
+    await expect(tip).toContainText("FP32");
+    await expect(tip).toContainText("快约一倍");
+    await expect(tip).toContainText("准确率略低");
+
+    // Cancelling keeps the saved choice.
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#settings-dialog")).toBeHidden();
+    await page.click("#settings-btn");
+    await expect(row("mathcraft-formula-rec").locator(".model-pick input")).toBeChecked();
   });
 
   test("choosing the Int8 formula recognizer switches which model formula mode needs", async ({ page }) => {
     await open(page, { models: { formula: true, mixed: false, text: false } });
     await expect(page.locator("#status")).toContainText("状态: 就绪");
     await page.click("#settings-btn");
-    await page.locator("#settings-form").getByText("Int8（更小更快）").click();
+    await page.locator('.model-row[data-model="mathcraft-formula-rec-int8"] .model-pick span').click();
     await page.locator("#settings-form").getByText("保存", { exact: true }).click();
     await expect(page.locator("#settings-dialog")).toBeHidden();
     await expect.poll(() => mock<string>(page, "settings.formula_model")).toBe("int8");
@@ -419,6 +461,56 @@ test.describe("settings", () => {
     await page.click("#settings-btn");
     await page.locator('.model-row[data-model="mathcraft-formula-rec"] .model-delete').click();
     await expect(page.locator("#ask-text")).toHaveText("删除“公式识别”模型？需要时可重新下载（104 MB）。");
+  });
+
+  test("the two formula detectors have their own mutually exclusive 选用 buttons", async ({ page }) => {
+    await open(page, { settings: { mode: "mixed" }, models: { formula: false, mixed: true, text: false } });
+    await expect(page.locator("#status")).toContainText("状态: 就绪");
+    await page.click("#settings-btn");
+    const row = (id: string) => page.locator(`.model-row[data-model="${id}"]`);
+    const picked = (id: string) => row(id).locator(".model-pick input");
+    await expect(row("mathcraft-formula-det").locator(".model-pick span")).toHaveText("已选用");
+    await expect(row("mathcraft-formula-det-int8").locator(".model-pick span")).toHaveText("选用");
+
+    // Picking the Int8 detector unpicks the standard detector and leaves the recognizer alone.
+    await row("mathcraft-formula-det-int8").locator(".model-pick span").click();
+    await expect(picked("mathcraft-formula-det-int8")).toBeChecked();
+    await expect(picked("mathcraft-formula-det")).not.toBeChecked();
+    await expect(picked("mathcraft-formula-rec")).toBeChecked();
+    await expect(picked("mathcraft-formula-rec-int8")).not.toBeChecked();
+
+    // Its ? explains the detector's own trade-offs; the standard detector has none.
+    await expect(row("mathcraft-formula-det").locator(".model-help")).toHaveCount(0);
+    const tip = page.locator("#int8-tip-det");
+    await row("mathcraft-formula-det-int8").locator(".model-help button").hover();
+    await expect(tip).toBeVisible();
+    await expect(tip).toContainText("1/3");
+    await expect(tip).toContainText("检测框");
+
+    await page.locator("#settings-form").getByText("保存", { exact: true }).click();
+    await expect(page.locator("#settings-dialog")).toBeHidden();
+    await expect.poll(() => mock<string>(page, "settings.det_model")).toBe("int8");
+    expect(await mock<string>(page, "settings.formula_model")).toBe("standard");
+    // Only the standard detector is on disk; it stands in, so mixed mode stays ready.
+    await expect(page.locator("#status")).toContainText("状态: 就绪");
+
+    // It is the detector in use, so deleting it warns, and then mixed mode needs the selected Int8 one.
+    await page.click("#settings-btn");
+    await row("mathcraft-formula-det").locator(".model-delete").click();
+    await expect(page.locator("#ask-text")).toHaveText(
+      "删除“公式检测”模型？混合识别将无法使用，需要时可重新下载（64 MB）。",
+    );
+    await page.click("#ask-ok");
+    await expect(row("mathcraft-formula-det").locator(".model-state")).toHaveText("未下载");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#status")).toContainText("需下载模型");
+    await page.click("#capture-btn");
+    await expect(page.locator("#models-text")).toContainText("157 MB");
+    await page.click("#models-start");
+    await expect(page.locator("#models-dialog")).toBeHidden();
+    await expect(page.locator("#status")).toContainText("状态: 就绪");
+    expect(await mock<boolean>(page, "installed.has('mathcraft-formula-det-int8')")).toBe(true);
+    expect(await mock<boolean>(page, "installed.has('mathcraft-formula-det')")).toBe(false);
   });
 
   test("the model list follows the selected backend before saving", async ({ page }) => {
@@ -452,7 +544,7 @@ test.describe("settings", () => {
     await expect(row("mathcraft-text-det").locator(".model-state")).toHaveText(/下载中 \d+%/);
     await expect(row("mathcraft-text-det").locator(".model-state")).toHaveText("已下载");
     await expect(row("mathcraft-text-det").locator(".model-download")).toHaveText("重新下载");
-    await expect(page.locator("#models-count")).toHaveText("已下载 2/5");
+    await expect(page.locator("#models-count")).toHaveText("已下载 2/6");
     await expect(page.locator(".toast").last()).toContainText("文字检测 已下载");
     await expect(page.locator("#status")).toContainText("需下载模型");
 
@@ -501,7 +593,7 @@ test.describe("settings", () => {
     await expect(page.locator("#models-dialog")).toBeHidden();
     await page.click("#settings-btn");
     await expect(page.locator('.model-row[data-model="mathcraft-formula-rec"] .model-state')).toHaveText("已下载");
-    await expect(page.locator("#models-count")).toHaveText("已下载 1/5");
+    await expect(page.locator("#models-count")).toHaveText("已下载 1/6");
   });
 
   test("downloaded models get a red delete button on the right", async ({ page }) => {
@@ -537,7 +629,7 @@ test.describe("settings", () => {
   });
 
   test("deleting a model asks first, then marks it not downloaded", async ({ page }) => {
-    await open(page); // all four installed, formula mode ready
+    await open(page); // every model installed, formula mode ready
     await page.click("#settings-btn");
     const row = page.locator('.model-row[data-model="mathcraft-formula-rec"]');
     await row.locator(".model-delete").click();
@@ -556,7 +648,7 @@ test.describe("settings", () => {
     await expect(row.locator(".model-state")).toHaveText("未下载");
     await expect(row.locator(".model-delete")).toBeHidden();
     await expect(row.locator(".model-download")).toHaveText("下载");
-    await expect(page.locator("#models-count")).toHaveText("已下载 4/5");
+    await expect(page.locator("#models-count")).toHaveText("已下载 5/6");
     await expect(page.locator(".toast").last()).toContainText("公式识别 已删除");
     await expect(page.locator("#settings-dialog")).toBeVisible(); // still in Settings
     await expect(page.locator("#status")).toContainText("需下载模型"); // formula mode lost its model
@@ -594,7 +686,7 @@ test.describe("settings", () => {
   test("model rows are translated", async ({ page }) => {
     await open(page, { settings: { language: "en" }, models: { formula: true, mixed: false, text: false } });
     await page.click("#settings-btn");
-    await expect(page.locator("#models-count")).toHaveText("1 of 5 downloaded");
+    await expect(page.locator("#models-count")).toHaveText("1 of 6 downloaded");
     const det = page.locator('.model-row[data-model="mathcraft-text-det"]');
     await expect(det.locator(".model-name")).toHaveText("Text detection");
     await expect(det.locator(".model-use")).toHaveText("Used by: Mixed, Text");

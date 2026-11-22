@@ -10,6 +10,8 @@ export interface Settings {
   mode: Mode;
   backend: "builtin" | "external";
   formula_model: "standard" | "int8";
+  /** Formula detector build used by mixed mode. */
+  det_model: "standard" | "int8";
   theme: "auto" | "light" | "dark";
   language: "zh" | "en";
   hotkey: string;
