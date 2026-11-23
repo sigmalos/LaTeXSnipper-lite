@@ -1,4 +1,4 @@
-import { api, type ModelInfo, type ModelsState, type Recognition, type Settings, type Snapshot } from "./lib/api";
+import { api, type ModelInfo, type ModelsState, type Recognition, type Settings, type Snapshot, type UpdateView } from "./lib/api";
 import {
   COPY_FORMATS,
   EXPORT_FORMATS,
@@ -12,6 +12,7 @@ import {
   orderedEntries,
   parsePageRange,
   percentOf,
+  renderNotes,
   resolveTheme,
   toMarkdown,
   toTexDocument,
@@ -904,6 +905,68 @@ function readSettingsForm(): Settings {
   };
 }
 
+// ------------------------------------------------------------------ updates
+
+let update: UpdateView = { phase: "idle", installs_on_quit: false };
+
+/** 检查更新 until a newer release is found; then the same button updates. */
+function renderUpdate(): void {
+  const btn = $<HTMLButtonElement>("update-btn");
+  const u = update;
+  let label = t("检查更新");
+  let title = "";
+  if (u.phase === "checking") label = t("正在检查…");
+  else if (u.phase === "available") label = t("更新到 {version}", { version: u.version });
+  else if (u.phase === "downloading")
+    label = u.total ? t("正在下载 {percent}%", { percent: percentOf(u.done, u.total) ?? 0 }) : t("正在下载…");
+  else if (u.phase === "ready") {
+    label = t("重启以完成更新");
+    title = u.installs_on_quit
+      ? t("{version} 已下载，退出 LaTeXSnipper 时会自动安装", { version: u.version })
+      : t("{version} 已准备好，重新打开 LaTeXSnipper 后生效", { version: u.version });
+  }
+  btn.textContent = label;
+  btn.title = title;
+  btn.disabled = u.phase === "checking" || u.phase === "downloading";
+  btn.classList.toggle("primary", u.phase === "available" || u.phase === "ready");
+}
+
+function setUpdate(u: UpdateView): void {
+  update = u;
+  renderUpdate();
+}
+
+$("update-btn").addEventListener("click", async () => {
+  if (update.phase === "available" || update.phase === "ready") {
+    try {
+      await api.applyUpdate(); // restarts into the new version
+    } catch (e) {
+      toast(t("更新失败：{error}", { error: String((e as Error).message ?? e) }), true);
+      setUpdate(await api.updateStatus());
+    }
+    return;
+  }
+  try {
+    const u = await api.checkUpdate();
+    setUpdate(u);
+    if (u.phase === "up_to_date") toast(t("已是最新版本"));
+    if (u.phase === "failed") toast(t("检查更新失败：{error}", { error: u.error }), true);
+  } catch (e) {
+    toast(t("检查更新失败：{error}", { error: String((e as Error).message ?? e) }), true);
+    setUpdate(await api.updateStatus());
+  }
+});
+
+/** After an update, its release notes once. */
+function showChangelog(log: NonNullable<Snapshot["changelog"]>): void {
+  const dlg = $<HTMLDialogElement>("changelog-dialog");
+  $("changelog-title").textContent = t("已更新到 LaTeXSnipper {version}", { version: log.version });
+  $("changelog-body").innerHTML = renderNotes(log.notes) || `<p>${t("本次更新没有说明。")}</p>`;
+  dlg.addEventListener("close", () => api.dismissChangelog().catch(() => undefined), { once: true });
+  dlg.showModal();
+  $("changelog-ok").focus();
+}
+
 function openSettings(): void {
   const dlg = $<HTMLDialogElement>("settings-dialog");
   if (dlg.open) return;
@@ -1371,6 +1434,8 @@ async function boot(): Promise<void> {
     renderHistory();
   });
   await api.onOpenSettings(openSettings);
+  await api.onUpdateStatus(setUpdate);
+  setUpdate(await api.updateStatus());
   await api.onProgress((p) => {
     const s = rowStates.get(p.model);
     if (!s) return;
@@ -1389,6 +1454,7 @@ async function boot(): Promise<void> {
     )
     .catch(() => undefined);
   if (!snap.settings.onboarding_done) openTour();
+  else if (snap.changelog && !snap.selfcheck) showChangelog(snap.changelog);
   document.body.dataset.ready = "true";
   if (snap.selfcheck) await selfcheck();
 }

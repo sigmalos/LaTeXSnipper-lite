@@ -53,9 +53,30 @@ jobs:
           cache-key: release
       - run: npm ci
 
+      # One fixed certificate keeps macOS permissions (Screen Recording) across updates.
+      - name: Import the code signing certificate
+        if: matrix.platform == 'macos'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          SIGNING_IDENTITY: LaTeXSnipper Self-Signed
+        run: scripts/import-signing-cert.sh
+
+      # With the updater key, macOS and Windows also get signed update packages
+      # (.app.tar.gz / setup.exe + .sig) for the in-app updater; the .deb is
+      # signed when it is named below.
       - name: Build installers
         shell: bash
-        run: npx tauri build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ] && [ "${{ matrix.platform }}" != linux ]; then
+            npx tauri build --config '{"bundle":{"createUpdaterArtifacts":true}}'
+          else
+            npx tauri build
+          fi
+          if [ "${{ matrix.platform }}" = macos ]; then codesign -dr - "$BUNDLE/macos/LaTeXSnipper.app"; fi
 
       - uses: ./.github/actions/models
 
@@ -98,14 +119,29 @@ jobs:
           bin=$(ls "$dir"/*.exe | grep -vi uninstall | head -1)
           echo "installed $bin"; scripts/smoke.sh "$bin" --require-models
 
-      - name: Name the installers
+      - name: Name the installers and update packages
         shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           mkdir out
           case "${{ matrix.platform }}" in
-            macos) cp $BUNDLE/dmg/*.dmg "out/LaTeXSnipper-Lite_${VERSION}_macos-arm64.dmg" ;;
-            linux) cp $BUNDLE/deb/*.deb "out/latexsnipper-lite_${VERSION}_amd64.deb" ;;
-            windows) cp $BUNDLE/nsis/*-setup.exe "out/LaTeXSnipper-Lite_${VERSION}_windows-x64-setup.exe" ;;
+            macos)
+              cp $BUNDLE/dmg/*.dmg "out/LaTeXSnipper-Lite_${VERSION}_macos-arm64.dmg"
+              if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+                cp $BUNDLE/macos/*.app.tar.gz "out/LaTeXSnipper-Lite_${VERSION}_macos-arm64.app.tar.gz"
+                cp $BUNDLE/macos/*.app.tar.gz.sig "out/LaTeXSnipper-Lite_${VERSION}_macos-arm64.app.tar.gz.sig"
+              fi ;;
+            linux)
+              deb="out/latexsnipper-lite_${VERSION}_amd64.deb"
+              cp $BUNDLE/deb/*.deb "$deb"
+              if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npx tauri signer sign "$deb"; fi ;;
+            windows)
+              cp $BUNDLE/nsis/*-setup.exe "out/LaTeXSnipper-Lite_${VERSION}_windows-x64-setup.exe"
+              if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+                cp $BUNDLE/nsis/*-setup.exe.sig "out/LaTeXSnipper-Lite_${VERSION}_windows-x64-setup.exe.sig"
+              fi ;;
           esac
           ls -l out
 
@@ -159,6 +195,15 @@ jobs:
           pattern: installer-*
           path: out
           merge-multiple: true
+      # The in-app updater reads …/releases/latest/download/latest.json.
+      - name: Update manifest
+        run: |
+          if ls out/*.sig >/dev/null 2>&1; then
+            node scripts/update-manifest.mjs out "$VERSION" "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+            cat out/latest.json
+          else
+            echo "no signed update packages; publishing without latest.json"
+          fi
       - name: Checksums
         working-directory: out
         run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt

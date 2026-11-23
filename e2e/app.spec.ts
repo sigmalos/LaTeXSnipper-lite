@@ -408,6 +408,76 @@ test.describe("recognition type dropdown", () => {
   });
 });
 
+test.describe("updates", () => {
+  test("检查更新 reports an up-to-date app and a failed check", async ({ page }) => {
+    await open(page);
+    await page.click("#settings-btn");
+    await expect(page.locator("#update-btn")).toHaveText("检查更新");
+    await page.click("#update-btn");
+    await expect(page.locator(".toast").last()).toContainText("已是最新版本");
+    await expect(page.locator("#update-btn")).toHaveText("检查更新");
+    await page.evaluate(() => ((window as unknown as { __mock: { updateCheckFails: boolean } }).__mock.updateCheckFails = true));
+    await page.click("#update-btn");
+    await expect(page.locator(".toast.error").last()).toContainText("检查更新失败：network unreachable");
+    await expect(page.locator("#settings-dialog")).toBeVisible();
+  });
+
+  test("a newer release turns the button into 更新, which downloads and restarts", async ({ page }) => {
+    await open(page, { latestRelease: "1.4.0", updateDelay: 60 });
+    await page.click("#settings-btn");
+    await page.click("#update-btn");
+    await expect(page.locator("#update-btn")).toHaveText("更新到 1.4.0");
+    await expect(page.locator("#update-btn")).toHaveClass(/primary/);
+    await page.click("#update-btn");
+    await expect(page.locator("#update-btn")).toHaveText(/正在下载 \d+%/);
+    await expect(page.locator("#update-btn")).toBeDisabled();
+    await expect.poll(() => mock<boolean>(page, "restarted")).toBe(true);
+    await expect(page.locator("#settings-dialog")).toBeVisible();
+  });
+
+  test("a background download shows as ready; a failed install is reported", async ({ page }) => {
+    await open(page, { update: { phase: "available", version: "1.4.0", installs_on_quit: false }, updateInstallFails: true });
+    await page.click("#settings-btn");
+    await expect(page.locator("#update-btn")).toHaveText("更新到 1.4.0");
+    await page.evaluate(() =>
+      (window as unknown as { __mock: { emit: (e: string, p: unknown) => void } }).__mock.emit("update-status", {
+        phase: "ready",
+        version: "1.4.0",
+        installs_on_quit: true,
+      }),
+    );
+    await expect(page.locator("#update-btn")).toHaveText("重启以完成更新");
+    await expect(page.locator("#update-btn")).toHaveAttribute("title", "1.4.0 已下载，退出 LaTeXSnipper 时会自动安装");
+    await page.evaluate(() => {
+      const m = (window as unknown as { __mock: { update: unknown } }).__mock;
+      m.update = { phase: "available", version: "1.4.0", installs_on_quit: false };
+    });
+    await page.click("#update-btn");
+    await expect(page.locator(".toast.error").last()).toContainText("更新失败：signature mismatch");
+    await expect(page.locator("#update-btn")).toHaveText("更新到 1.4.0");
+  });
+
+  test("the first launch after an update shows its release notes once", async ({ page }) => {
+    await open(page, {
+      settings: { onboarding_done: true },
+      changelog: { version: "1.4.0", notes: "### 改进与修复\n\n- **预览**：固定大小\n- <b>不是标签</b>" },
+    });
+    await expect(page.locator("#changelog-dialog")).toBeVisible();
+    await expect(page.locator("#changelog-title")).toHaveText("已更新到 LaTeXSnipper 1.4.0");
+    await expect(page.locator("#changelog-body h4")).toHaveText("改进与修复");
+    await expect(page.locator("#changelog-body li strong")).toHaveText("预览");
+    await expect(page.locator("#changelog-body li").last()).toHaveText("<b>不是标签</b>");
+    await page.click("#changelog-ok");
+    await expect(page.locator("#changelog-dialog")).toBeHidden();
+    await expect.poll(() => mock<boolean>(page, "changelogDismissed")).toBe(true);
+  });
+
+  test("no release notes without an update", async ({ page }) => {
+    await open(page, { settings: { onboarding_done: true } });
+    await expect(page.locator("#changelog-dialog")).toBeHidden();
+  });
+});
+
 test.describe("settings", () => {
   test("switching mode, theme and language persists and re-renders", async ({ page }) => {
     await open(page);

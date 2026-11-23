@@ -10,6 +10,7 @@ import {
   orderedEntries,
   parsePageRange,
   splitMath,
+  renderNotes,
   soleDisplayMath,
   toMarkdown,
   toTexDocument,
@@ -201,5 +202,20 @@ describe("model downloads", () => {
       code: "DOWNLOAD_IN_PROGRESS",
       detail: "mathcraft-text-det",
     });
+  });
+});
+
+describe("release notes", () => {
+  it("renders headings, lists and paragraphs", () => {
+    expect(renderNotes("### 改进与修复\n\n- **预览**：固定大小\n- 用 `$$…$$` 包裹\n\n见说明。")).toBe(
+      "<h4>改进与修复</h4><ul><li><strong>预览</strong>：固定大小</li><li>用 <code>$$…$$</code> 包裹</li></ul><p>见说明。</p>",
+    );
+  });
+
+  it("escapes HTML and keeps only link text", () => {
+    expect(renderNotes("- <img src=x onerror=alert(1)>\n[1.3.0 的说明](https://example.com)")).toBe(
+      "<ul><li>&lt;img src=x onerror=alert(1)&gt;</li></ul><p>1.3.0 的说明</p>",
+    );
+    expect(renderNotes("")).toBe("");
   });
 });

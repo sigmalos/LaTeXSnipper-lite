@@ -758,7 +758,40 @@ dialog footer,
   margin-top: 4px;
 }
 dialog footer .version {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin-right: auto;
+}
+/* Release notes shown once after an update. */
+.changelog {
+  max-height: 52vh;
+  overflow: auto;
+  font-size: 13px;
+  line-height: 1.6;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.changelog h4 {
+  margin: 12px 0 4px;
+  font-size: 13px;
+}
+.changelog h4:first-child {
+  margin-top: 0;
+}
+.changelog ul {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+.changelog li + li {
+  margin-top: 4px;
+}
+.changelog p {
+  margin: 0 0 8px;
+  color: var(--muted);
+}
+.changelog code {
+  font: 12px var(--mono);
 }
 .hint {
   margin: 0;

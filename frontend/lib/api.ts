@@ -36,7 +36,17 @@ export interface Snapshot {
   capture_supported: boolean;
   selfcheck: boolean;
   data_dir: string;
+  /** Release notes of the version this launch updated to, shown once. */
+  changelog: { version: string; notes: string } | null;
 }
+
+/** Self-update state, as the Settings button shows it. */
+export type UpdateView = { installs_on_quit: boolean } & (
+  | { phase: "idle" | "checking" | "up_to_date" }
+  | { phase: "available" | "ready"; version: string }
+  | { phase: "downloading"; version: string; done: number; total: number | null }
+  | { phase: "failed"; error: string }
+);
 
 export interface Recognition {
   text: string;
@@ -92,6 +102,11 @@ export const api = {
   presentResult: () => invoke<void>("present_result"),
   dismissResult: () => invoke<void>("dismiss_result"),
   openScreenSettings: () => invoke<void>("open_screen_settings"),
+  updateStatus: () => invoke<UpdateView>("update_status"),
+  checkUpdate: () => invoke<UpdateView>("check_update"),
+  /** Downloads if needed, installs and restarts; does not return on success. */
+  applyUpdate: () => invoke<void>("apply_update"),
+  dismissChangelog: () => invoke<void>("dismiss_changelog"),
   resultConfirmed: (r: ConfirmedResult) => emit("result-confirmed", r),
   downloadModels: (mode: Mode) => invoke<ModelsState>("download_models", { mode }),
   listModels: () => invoke<ModelsState>("list_models"),
@@ -115,6 +130,8 @@ export const api = {
   onResultConfirmed: (cb: (r: ConfirmedResult) => void): Promise<UnlistenFn> =>
     listen<ConfirmedResult>("result-confirmed", (e) => cb(e.payload)),
   onOpenSettings: (cb: () => void): Promise<UnlistenFn> => listen("open-settings", () => cb()),
+  onUpdateStatus: (cb: (u: UpdateView) => void): Promise<UnlistenFn> =>
+    listen<UpdateView>("update-status", (e) => cb(e.payload)),
   onDrop: async (cb: (paths: string[]) => void, hover: (on: boolean) => void): Promise<void> => {
     const { getCurrentWebview } = await import("@tauri-apps/api/webview");
     await getCurrentWebview().onDragDropEvent((e) => {

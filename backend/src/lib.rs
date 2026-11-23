@@ -2,6 +2,7 @@ pub mod commands;
 pub mod external;
 pub mod shell;
 pub mod store;
+pub mod update;
 
 // The engine lives in crates/mathcraft so the Office add-in host can link it too.
 pub use mathcraft::{modelhub, ocr};
@@ -59,6 +60,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, _shortcut, event| {
@@ -70,6 +72,7 @@ pub fn run() {
         )
         .manage(core.clone())
         .manage(shell::PendingResult::default())
+        .manage(update::Updates::default())
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 // Closing the main window keeps the app running in the tray.
@@ -98,6 +101,7 @@ pub fn run() {
             }
             // The window starts hidden (tauri.conf.json) so headless runs never flash it.
             shell::show_main(app.handle());
+            update::spawn_auto(app.handle().clone());
             // Load the formula model off the UI thread so the first capture is fast.
             let warm = core.clone();
             std::thread::spawn(move || {
@@ -117,6 +121,10 @@ pub fn run() {
             commands::recognize_file,
             commands::capture,
             commands::open_screen_settings,
+            commands::update_status,
+            commands::check_update,
+            commands::apply_update,
+            commands::dismiss_changelog,
             commands::take_result,
             commands::present_result,
             commands::dismiss_result,
@@ -134,15 +142,19 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building LaTeXSnipper")
-        .run(|_app, _event| {
+        .run(|app, event| {
+            // Windows installs a downloaded update as the app quits.
+            if let tauri::RunEvent::Exit = event {
+                update::install_on_exit(app);
+            }
             // Clicking the Dock icon (or relaunching the .app) brings the window back.
             #[cfg(target_os = "macos")]
             if let tauri::RunEvent::Reopen {
                 has_visible_windows: false,
                 ..
-            } = _event
+            } = event
             {
-                shell::show_main(_app);
+                shell::show_main(app);
             }
         });
 }

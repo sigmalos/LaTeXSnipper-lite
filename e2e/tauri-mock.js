@@ -79,6 +79,12 @@
     resultShown: false,
     emitted: [],
     exported: [],
+    // self-update: the newer release the server offers (or none), and what happened
+    latestRelease: seed.latestRelease ?? null,
+    updateCheckFails: !!seed.updateCheckFails,
+    update: seed.update ?? { phase: "idle", installs_on_quit: false },
+    restarted: false,
+    changelogDismissed: false,
   };
   window.__mock = state;
 
@@ -161,7 +167,40 @@
       capture_supported: seed.capture_supported ?? true,
       selfcheck: false,
       data_dir: "/Users/demo/Library/Application Support/LaTeXSnipper",
+      changelog: seed.changelog ?? null,
     }),
+    update_status: () => structuredClone(state.update),
+    check_update: async () => {
+      const setUpdate = (u) => {
+        state.update = { installs_on_quit: false, ...u };
+        emit("update-status", structuredClone(state.update));
+      };
+      setUpdate({ phase: "checking" });
+      await new Promise((r) => setTimeout(r, seed.updateDelay ?? 30));
+      if (state.updateCheckFails) setUpdate({ phase: "failed", error: "network unreachable" });
+      else if (state.latestRelease) setUpdate({ phase: "available", version: state.latestRelease });
+      else setUpdate({ phase: "up_to_date" });
+      return structuredClone(state.update);
+    },
+    apply_update: async () => {
+      const version = state.update.version;
+      if (state.update.phase === "available") {
+        for (let i = 0; i <= 4; i++) {
+          state.update = { phase: "downloading", version, done: i * 25, total: 100, installs_on_quit: false };
+          emit("update-status", structuredClone(state.update));
+          await new Promise((r) => setTimeout(r, seed.updateDelay ?? 30));
+        }
+      }
+      if (seed.updateInstallFails) {
+        state.update = { phase: "available", version, installs_on_quit: false };
+        throw "signature mismatch";
+      }
+      state.update = { phase: "ready", version, installs_on_quit: false };
+      state.restarted = true;
+    },
+    dismiss_changelog: () => {
+      state.changelogDismissed = true;
+    },
     save_settings: ({ settings }) => {
       if (settings.hotkey === "CommandOrControl+Alt+Q") throw "HOTKEY_INVALID:already registered";
       state.settings = structuredClone(settings);

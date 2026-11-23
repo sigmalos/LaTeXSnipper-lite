@@ -238,3 +238,42 @@ export function percentOf(done: number, total: number): number | null {
   if (!total) return null;
   return Math.min(100, Math.floor((done / total) * 100));
 }
+
+/**
+ * Release notes (the small Markdown subset they use) as safe HTML: headings,
+ * bullet lists, paragraphs, **bold** and `code`. Links keep only their text,
+ * since following one would navigate the app's own window.
+ */
+export function renderNotes(md: string): string {
+  const inline = (s: string) =>
+    escapeHtml(s)
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>");
+  const out: string[] = [];
+  let list = false;
+  const closeList = () => {
+    if (list) out.push("</ul>");
+    list = false;
+  };
+  for (const raw of md.replace(/\r/g, "").split("\n")) {
+    const line = raw.trim();
+    const heading = /^#{1,6}\s+(.*)$/.exec(line);
+    const item = /^[-*]\s+(.*)$/.exec(line);
+    if (heading) {
+      closeList();
+      out.push(`<h4>${inline(heading[1])}</h4>`);
+    } else if (item) {
+      if (!list) out.push("<ul>");
+      list = true;
+      out.push(`<li>${inline(item[1])}</li>`);
+    } else if (line) {
+      closeList();
+      out.push(`<p>${inline(line)}</p>`);
+    } else {
+      closeList();
+    }
+  }
+  closeList();
+  return out.join("");
+}

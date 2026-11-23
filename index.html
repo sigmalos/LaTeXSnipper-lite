@@ -168,7 +168,10 @@
           <label><span data-i18n="数据目录">数据目录</span><input id="data-dir" readonly tabindex="-1" /></label>
         </div>
         <footer>
-          <span class="hint version" id="version"></span>
+          <span class="version">
+            <span class="hint" id="version"></span>
+            <button class="btn small" type="button" id="update-btn" data-i18n="检查更新">检查更新</button>
+          </span>
           <button class="btn quiet" value="cancel" data-i18n="取消">取消</button>
           <button class="btn primary" value="save" data-i18n="保存">保存</button>
         </footer>
@@ -256,6 +259,16 @@
     </dialog>
 
     <!-- prompt / confirm -->
+    <dialog id="changelog-dialog" class="sheet">
+      <form method="dialog">
+        <h3 id="changelog-title"></h3>
+        <div class="changelog" id="changelog-body"></div>
+        <footer>
+          <button class="btn primary" value="ok" id="changelog-ok" data-i18n="知道了">知道了</button>
+        </footer>
+      </form>
+    </dialog>
+
     <dialog id="ask-dialog" class="sheet narrow">
       <form method="dialog">
         <p id="ask-text"></p>

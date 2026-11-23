@@ -67,6 +67,8 @@ pub struct Snapshot {
     /// Headless self-check run (smoke test): the UI reports back and the app exits.
     pub selfcheck: bool,
     pub data_dir: String,
+    /// Release notes of the version this launch updated to, shown once.
+    pub changelog: Option<crate::update::Changelog>,
 }
 
 #[derive(Serialize, Debug)]
@@ -273,6 +275,7 @@ impl Core {
             pandoc: pandoc_path().is_some(),
             capture_supported: crate::shell::CAPTURE_SUPPORTED,
             data_dir: s.dir().display().to_string(),
+            changelog: None,
         }
     }
 
@@ -397,8 +400,13 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'sta
 }
 
 #[tauri::command]
-pub fn bootstrap(core: State<'_, Arc<Core>>) -> Snapshot {
-    core.snapshot()
+pub fn bootstrap(app: AppHandle, core: State<'_, Arc<Core>>) -> Snapshot {
+    let mut snap = core.snapshot();
+    // The version the updater compares against (tauri.conf.json), so the notes
+    // saved for an update match the build that installed it.
+    let version = app.package_info().version.to_string();
+    snap.changelog = crate::update::pending_changelog(core.store().dir(), &version);
+    snap
 }
 
 #[tauri::command]
@@ -522,6 +530,31 @@ pub const SCREEN_PERMISSION: &str = "SCREEN_PERMISSION";
 #[tauri::command]
 pub fn open_screen_settings() -> Res<()> {
     crate::shell::open_screen_capture_settings().map_err(err)
+}
+
+#[tauri::command]
+pub fn update_status(updates: State<'_, crate::update::Updates>) -> crate::update::UpdateView {
+    updates.view()
+}
+
+#[tauri::command]
+pub async fn check_update(
+    app: AppHandle,
+    updates: State<'_, crate::update::Updates>,
+) -> Res<crate::update::UpdateView> {
+    crate::update::check(&app, true).await.map_err(err)?;
+    Ok(updates.view())
+}
+
+/// Download (if needed) and install the update, then restart into it.
+#[tauri::command]
+pub async fn apply_update(app: AppHandle) -> Res<()> {
+    crate::update::apply(&app).await.map_err(err)
+}
+
+#[tauri::command]
+pub fn dismiss_changelog(core: State<'_, Arc<Core>>) {
+    crate::update::dismiss_changelog(core.store().dir());
 }
 
 /// What the result window shows: the capture and the look it should match.
