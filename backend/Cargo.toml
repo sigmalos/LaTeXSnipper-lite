@@ -1,6 +1,6 @@
 [package]
 name = "latexsnipper"
-version = "1.3.2"
+version = "1.4.0"
 description = "Turn screenshots, images, PDFs and handwriting into editable LaTeX"
 authors = ["SakuraMathcraft"]
 license = "GPL-3.0-only"
