@@ -24,7 +24,7 @@ import {
 import { getLang, setLang, t, translateDom } from "./lib/i18n";
 import { InkModel, drawStrokes, inkToPng } from "./lib/ink";
 import { SpotlightTour, type TourStep } from "./lib/tour";
-import { renderInto, toHtmlDocument, toMathML, toSvg } from "./lib/math";
+import { autoFit, renderInto, toHtmlDocument, toMathML, toSvg } from "./lib/math";
 
 const DEFAULT_HOTKEY = "CommandOrControl+F";
 /** Installed (unpacked) size of each model, for the "needs a download" prompt. */
@@ -152,7 +152,12 @@ async function renderPreview(target: HTMLElement, source: string, errorEl?: HTML
   }
 }
 
-const refreshPreview = debounce(() => renderPreview($("preview"), editor.value, $("preview-error")), 120);
+// The main preview scales a lone formula to fill the graph paper and re-fits as the window resizes.
+const fitPreview = autoFit($("preview"), $("preview-paper"));
+const refreshPreview = debounce(
+  () => renderPreview($("preview"), editor.value, $("preview-error")).then(fitPreview),
+  120,
+);
 
 function loadIntoEditor(text: string, _kind?: Kind): void {
   editor.value = text;
@@ -165,6 +170,7 @@ $("clear-preview-btn").addEventListener("click", () => {
   editor.value = "";
   refreshPreview.cancel();
   $("preview").replaceChildren();
+  fitPreview();
   $("preview-error").hidden = true;
 });
 

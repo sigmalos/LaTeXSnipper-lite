@@ -10,6 +10,7 @@ import {
   orderedEntries,
   parsePageRange,
   splitMath,
+  soleDisplayMath,
   toMarkdown,
   toTexDocument,
   wrapLatex,
@@ -49,6 +50,14 @@ describe("content classification", () => {
   it("keeps escaped and unterminated dollars as text", () => {
     expect(splitMath("\\$5 and $open")).toEqual([{ type: "text", value: "$5 and $open" }]);
     expect(splitMath("$a\n\nb$")).toEqual([{ type: "text", value: "$a\n\nb$" }]);
+  });
+
+  it("finds a lone display formula", () => {
+    expect(soleDisplayMath("$$\n\\frac{a}{b}\n$$\n")).toBe("\\frac{a}{b}");
+    expect(soleDisplayMath("Let $x$.\n\n$$x$$")).toBeNull();
+    expect(soleDisplayMath("$x$")).toBeNull();
+    expect(soleDisplayMath("$$  $$")).toBeNull();
+    expect(soleDisplayMath("\\frac{a}{b}")).toBeNull();
   });
 
   it("maps modes to history kinds", () => {

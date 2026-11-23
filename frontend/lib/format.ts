@@ -23,7 +23,13 @@ export function isMixedContent(text: string): boolean {
   return /(^|[^\\])\$/.test(text);
 }
 
-export type Segment = { type: "text"; value: string } | { type: "math"; value: string; display: boolean };
+/** The TeX inside content that is nothing but one `$$…$$` block (how mixed recognition returns a lone formula). */
+export function soleDisplayMath(text: string): string | null {
+  const segs = splitMath(text.trim());
+  return segs.length === 1 && segs[0].type === "math" && segs[0].display && segs[0].value ? segs[0].value : null;
+}
+
+export type Segment ={ type: "text"; value: string } | { type: "math"; value: string; display: boolean };
 
 /** Split Markdown-with-math into text and `$…$` / `$$…$$` segments. */
 export function splitMath(source: string): Segment[] {

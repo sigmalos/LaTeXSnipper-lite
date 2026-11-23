@@ -41,6 +41,29 @@ test.describe("main window", () => {
     await expect(page.locator("#editor")).toHaveValue("");
     await expect(page.locator("#preview mjx-container")).toHaveCount(0);
   });
+
+  test("live preview centers a lone formula and scales it with the paper", async ({ page }) => {
+    const box = async () => {
+      const [paper, svg] = await Promise.all([page.locator("#preview-paper").boundingBox(), page.locator("#preview svg").boundingBox()]);
+      return { paper: paper!, svg: svg! };
+    };
+    const expectCentered = async () => {
+      const { paper, svg } = await box();
+      expect(Math.abs(svg.x + svg.width / 2 - (paper.x + paper.width / 2))).toBeLessThan(3);
+      expect(Math.abs(svg.y + svg.height / 2 - (paper.y + paper.height / 2))).toBeLessThan(3);
+      return svg;
+    };
+    await open(page);
+    // Mixed recognition returns a lone formula wrapped in $$…$$; it previews like a bare formula.
+    await page.fill("#editor", "$$\n\\frac{a+b}{c^2} = \\sum_{i=1}^{n} x_i\n$$");
+    await expect(page.locator("#preview > mjx-container svg")).toBeVisible();
+    await expect(page.locator("#preview p")).toHaveCount(0);
+    await expect.poll(async () => (await box()).svg.width).toBeGreaterThan((await box()).paper.width * 0.6);
+    const big = await expectCentered();
+    await page.setViewportSize({ width: 820, height: 560 });
+    await expect.poll(async () => (await box()).svg.width).toBeLessThan(big.width * 0.9);
+    await expectCentered();
+  });
 });
 
 test.describe("result window (capture while the main window is hidden)", () => {
