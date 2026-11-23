@@ -91,6 +91,7 @@ export const api = {
   takeResult: () => invoke<PendingView | null>("take_result"),
   presentResult: () => invoke<void>("present_result"),
   dismissResult: () => invoke<void>("dismiss_result"),
+  openScreenSettings: () => invoke<void>("open_screen_settings"),
   resultConfirmed: (r: ConfirmedResult) => emit("result-confirmed", r),
   downloadModels: (mode: Mode) => invoke<ModelsState>("download_models", { mode }),
   listModels: () => invoke<ModelsState>("list_models"),

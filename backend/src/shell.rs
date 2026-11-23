@@ -105,6 +105,54 @@ pub fn suspend_hotkey<R: Runtime>(app: &AppHandle<R>) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Capture needs the Screen Recording permission. Without it `screencapture`
+/// returns no image, which would look exactly like a cancelled selection.
+/// The grant belongs to the app's code signature, so an ad-hoc signed update
+/// loses it and must be allowed again.
+#[cfg(target_os = "macos")]
+mod screen_access {
+    #[link(name = "CoreGraphics", kind = "framework")]
+    extern "C" {
+        pub fn CGPreflightScreenCaptureAccess() -> bool;
+        pub fn CGRequestScreenCaptureAccess() -> bool;
+    }
+}
+
+/// Whether this process may record the screen. Changes take effect after a relaunch.
+pub fn screen_capture_allowed() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        unsafe { screen_access::CGPreflightScreenCaptureAccess() }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        true
+    }
+}
+
+/// Ask for the permission. macOS shows its prompt only the first time, but the
+/// request always lists the app under Privacy & Security → Screen Recording.
+pub fn request_screen_capture() {
+    #[cfg(target_os = "macos")]
+    unsafe {
+        screen_access::CGRequestScreenCaptureAccess();
+    }
+}
+
+pub const SCREEN_CAPTURE_SETTINGS: &str =
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+
+pub fn open_screen_capture_settings() -> anyhow::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        let status = std::process::Command::new("/usr/bin/open")
+            .arg(SCREEN_CAPTURE_SETTINGS)
+            .status()?;
+        anyhow::ensure!(status.success(), "open exited with {status}");
+    }
+    Ok(())
+}
+
 pub fn show_main<R: Runtime>(app: &AppHandle<R>) {
     if let Some(w) = app.get_webview_window(MAIN) {
         let _ = w.unminimize();

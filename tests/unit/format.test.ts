@@ -146,6 +146,7 @@ describe("errors and timing", () => {
   it("extracts stable backend error codes", () => {
     expect(errorCode("MODELS_MISSING:a,b")).toEqual({ code: "MODELS_MISSING", detail: "a,b" });
     expect(errorCode(new Error("EMPTY_RESULT"))).toEqual({ code: "EMPTY_RESULT", detail: "" });
+    expect(errorCode("SCREEN_PERMISSION")).toEqual({ code: "SCREEN_PERMISSION", detail: "" });
     expect(errorCode("boom")).toEqual({ code: "OTHER", detail: "boom" });
   });
 

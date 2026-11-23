@@ -52,6 +52,9 @@ const EN: Record<string, string> = {
   "已确认并复制到剪贴板": "Confirmed and copied",
   "未检测到可识别内容": "Nothing recognizable was found",
   "识别失败：{error}": "Recognition failed: {error}",
+  "截图识别需要屏幕录制权限。请在「系统设置 → 隐私与安全性 → 屏幕录制」中打开 LaTeXSnipper，然后退出并重新打开应用。更新到新版本后需要重新授权；如果列表中的 LaTeXSnipper 已经打开但仍无法截图，请用「−」把它移除，再截图一次重新授权。":
+    "Capture needs the Screen Recording permission. Turn on LaTeXSnipper in System Settings → Privacy & Security → Screen Recording, then quit and reopen the app. Each update needs the permission again; if LaTeXSnipper is already on but capture still fails, remove it with “−” and capture again to grant it anew.",
+  "打开系统设置": "Open System Settings",
   "低置信度，请检查结果": "Low confidence. Check the result.",
   "确定要清空全部 {count} 条历史记录吗？": "Clear all {count} history items?",
   "确定要清空全部 {count} 条收藏吗？": "Clear all {count} favorites?",

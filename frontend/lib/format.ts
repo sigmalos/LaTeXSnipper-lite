@@ -204,11 +204,11 @@ export function debounce<A extends unknown[]>(fn: (...a: A) => void, ms: number)
 
 /** Stable error codes from the backend → user-facing message keys. */
 export function errorCode(err: unknown): {
-  code: "MODELS_MISSING" | "EMPTY_RESULT" | "HOTKEY_INVALID" | "DOWNLOAD_IN_PROGRESS" | "OTHER";
+  code: "MODELS_MISSING" | "EMPTY_RESULT" | "HOTKEY_INVALID" | "DOWNLOAD_IN_PROGRESS" | "SCREEN_PERMISSION" | "OTHER";
   detail: string;
 } {
   const msg = String((err as { message?: string })?.message ?? err);
-  for (const code of ["MODELS_MISSING", "EMPTY_RESULT", "HOTKEY_INVALID", "DOWNLOAD_IN_PROGRESS"] as const) {
+  for (const code of ["MODELS_MISSING", "EMPTY_RESULT", "HOTKEY_INVALID", "DOWNLOAD_IN_PROGRESS", "SCREEN_PERMISSION"] as const) {
     if (msg.startsWith(code)) return { code, detail: msg.slice(code.length + 1) };
   }
   return { code: "OTHER", detail: msg };

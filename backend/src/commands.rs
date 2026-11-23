@@ -462,6 +462,12 @@ pub async fn capture(
     if !crate::shell::CAPTURE_SUPPORTED {
         return Err("Screen capture is unavailable on this platform".into());
     }
+    if !crate::shell::screen_capture_allowed() {
+        // Explain it in the main window instead of failing like a cancelled selection.
+        crate::shell::request_screen_capture();
+        crate::shell::show_main(&app);
+        return Err(SCREEN_PERMISSION.into());
+    }
     let window = app.get_webview_window(crate::shell::MAIN);
     let was_visible = window
         .as_ref()
@@ -508,6 +514,14 @@ pub async fn capture(
             Err(e)
         }
     }
+}
+
+/// Error code: capture needs the Screen Recording permission.
+pub const SCREEN_PERMISSION: &str = "SCREEN_PERMISSION";
+
+#[tauri::command]
+pub fn open_screen_settings() -> Res<()> {
+    crate::shell::open_screen_capture_settings().map_err(err)
 }
 
 /// What the result window shows: the capture and the look it should match.

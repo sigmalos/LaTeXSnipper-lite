@@ -42,7 +42,7 @@ test.describe("main window", () => {
     await expect(page.locator("#preview mjx-container")).toHaveCount(0);
   });
 
-  test("live preview centers a lone formula and scales it with the paper", async ({ page }) => {
+  test("live preview centers a lone formula at a fixed size", async ({ page }) => {
     const box = async () => {
       const [paper, svg] = await Promise.all([page.locator("#preview-paper").boundingBox(), page.locator("#preview svg").boundingBox()]);
       return { paper: paper!, svg: svg! };
@@ -58,11 +58,13 @@ test.describe("main window", () => {
     await page.fill("#editor", "$$\n\\frac{a+b}{c^2} = \\sum_{i=1}^{n} x_i\n$$");
     await expect(page.locator("#preview > mjx-container svg")).toBeVisible();
     await expect(page.locator("#preview p")).toHaveCount(0);
-    await expect.poll(async () => (await box()).svg.width).toBeGreaterThan((await box()).paper.width * 0.6);
-    const big = await expectCentered();
-    await page.setViewportSize({ width: 820, height: 560 });
-    await expect.poll(async () => (await box()).svg.width).toBeLessThan(big.width * 0.9);
-    await expectCentered();
+    await expect(page.locator("#preview")).toHaveCSS("font-size", "32px");
+    const before = await expectCentered();
+    await page.setViewportSize({ width: 960, height: 620 });
+    await expect.poll(async () => Math.round((await box()).paper.width)).toBeLessThan(700);
+    const after = await expectCentered();
+    expect(Math.abs(after.width - before.width)).toBeLessThan(1);
+    expect(Math.abs(after.height - before.height)).toBeLessThan(1);
   });
 });
 
@@ -176,6 +178,22 @@ test.describe("recognition", () => {
     await expect(page.locator(".toast.error")).toContainText("未检测到可识别内容");
     await page.click("#capture-btn");
     await expect(page.locator(".toast.error").last()).toContainText("识别失败：decoder crashed");
+  });
+
+  test("missing Screen Recording permission explains itself and opens System Settings", async ({ page }) => {
+    await open(page, { outcomes: [{ error: "SCREEN_PERMISSION" }, { error: "SCREEN_PERMISSION" }] });
+    await page.click("#capture-btn");
+    await expect(page.locator("#ask-dialog")).toBeVisible();
+    await expect(page.locator("#ask-text")).toContainText("屏幕录制");
+    await page.click("#ask-dialog button[value=cancel]");
+    await expect(page.locator("#ask-dialog")).toBeHidden();
+    await page.click("#capture-btn");
+    await page.click("#ask-ok");
+    await expect(page.locator("#ask-dialog")).toBeHidden();
+    await expect
+      .poll(async () => (await mock<{ cmd: string }[]>(page, "calls")).filter((c) => c.cmd === "open_screen_settings").length)
+      .toBe(1);
+    await expect(page.locator(".toast.error")).toHaveCount(0);
   });
 
   test("missing models open the download sheet and progress to ready", async ({ page }) => {

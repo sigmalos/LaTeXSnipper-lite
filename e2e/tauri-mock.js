@@ -186,6 +186,7 @@
       return modelsState();
     },
     frontend_ready: () => undefined,
+    open_screen_settings: () => undefined,
     download_model: async ({ model }) => {
       if (!SIZES[model]) throw `unknown model ${model}`;
       await downloadOne(model);

@@ -81,49 +81,6 @@ export async function renderInto(target: HTMLElement, source: string): Promise<v
   target.replaceChildren(frag);
 }
 
-const FIT = { min: 16, max: 72, fillWidth: 0.9, fillHeight: 0.62 };
-
-/**
- * Size a lone formula in `target` to fill its scrolling `area`: font-size drives the SVG's ex units,
- * so the formula grows and shrinks with the area. Mixed content keeps its text size.
- */
-export function fitMath(target: HTMLElement, area: HTMLElement): void {
-  const svg = target.querySelector<SVGSVGElement>(":scope > mjx-container > svg");
-  target.classList.toggle("fit", !!svg);
-  if (!svg) {
-    target.style.removeProperty("font-size");
-    return;
-  }
-  // Natural size in ex. Tagged equations are width="100%" with their real width as min-width.
-  const ex = (s: string | null | undefined) => (s && s.trim().endsWith("ex") ? parseFloat(s) : NaN);
-  const wEx = ex(svg.getAttribute("width")) || ex(svg.style.minWidth);
-  const hEx = ex(svg.getAttribute("height"));
-  const exPx = svg.getBoundingClientRect().height / hEx;
-  if (!(wEx > 0 && hEx > 0 && exPx > 0)) return;
-  const fontPx = parseFloat(getComputedStyle(target).fontSize);
-  const pad = getComputedStyle(target);
-  const availW = area.clientWidth - parseFloat(pad.paddingLeft) - parseFloat(pad.paddingRight);
-  const availH = area.clientHeight - parseFloat(pad.paddingTop) - parseFloat(pad.paddingBottom);
-  // ex scales with font-size, so the size that fits is a straight ratio.
-  const k = Math.min((availW * FIT.fillWidth) / (wEx * exPx), (availH * FIT.fillHeight) / (hEx * exPx));
-  const size = Math.max(FIT.min, Math.min(FIT.max, fontPx * k));
-  target.style.fontSize = `${size.toFixed(1)}px`;
-}
-
-/** Keep `fitMath` applied while `area` resizes; call the returned function after each render. */
-export function autoFit(target: HTMLElement, area: HTMLElement): () => void {
-  const refit = () => fitMath(target, area);
-  let last = "";
-  new ResizeObserver(() => {
-    const size = `${area.clientWidth}x${area.clientHeight}`;
-    if (size !== last) {
-      last = size;
-      refit();
-    }
-  }).observe(area);
-  return refit;
-}
-
 export async function toSvg(latex: string): Promise<string> {
   const mj = await loadMathJax();
   const node = await svgFor(mj, latex.trim(), true);

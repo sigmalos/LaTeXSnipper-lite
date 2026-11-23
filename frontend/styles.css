@@ -564,7 +564,7 @@ kbd {
   flex: 1 0 auto;
   padding: 28px 32px;
   color: var(--ink);
-  font-size: 22px;
+  font-size: 32px; /* fixed: the formula keeps this size however large the window is */
   user-select: text;
   -webkit-user-select: text;
 }
@@ -572,10 +572,6 @@ kbd {
   min-height: 94px;
   padding: 14px 18px;
   font-size: 17px;
-}
-/* A fitted formula never drops below the minimum size; past that it scrolls instead of squeezing. */
-.preview.fit > mjx-container svg {
-  max-width: none;
 }
 .preview:has(p) {
   font: 15px/1.7 var(--font);
@@ -604,6 +600,10 @@ kbd {
 /* Outranks MathJax's own injected `mjx-container[jax][display] { margin: 1em 0 }`. */
 .paper .preview > mjx-container[display="true"] {
   margin: auto;
+}
+/* The main preview keeps a formula at full size; one wider than the paper scrolls. */
+.paper:not(.small) .preview > mjx-container svg {
+  max-width: none;
 }
 .preview mjx-container svg {
   max-width: 100%;

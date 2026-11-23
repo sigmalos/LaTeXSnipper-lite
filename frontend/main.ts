@@ -24,7 +24,7 @@ import {
 import { getLang, setLang, t, translateDom } from "./lib/i18n";
 import { InkModel, drawStrokes, inkToPng } from "./lib/ink";
 import { SpotlightTour, type TourStep } from "./lib/tour";
-import { autoFit, renderInto, toHtmlDocument, toMathML, toSvg } from "./lib/math";
+import { renderInto, toHtmlDocument, toMathML, toSvg } from "./lib/math";
 
 const DEFAULT_HOTKEY = "CommandOrControl+F";
 /** Installed (unpacked) size of each model, for the "needs a download" prompt. */
@@ -152,12 +152,7 @@ async function renderPreview(target: HTMLElement, source: string, errorEl?: HTML
   }
 }
 
-// The main preview scales a lone formula to fill the graph paper and re-fits as the window resizes.
-const fitPreview = autoFit($("preview"), $("preview-paper"));
-const refreshPreview = debounce(
-  () => renderPreview($("preview"), editor.value, $("preview-error")).then(fitPreview),
-  120,
-);
+const refreshPreview = debounce(() => renderPreview($("preview"), editor.value, $("preview-error")), 120);
 
 function loadIntoEditor(text: string, _kind?: Kind): void {
   editor.value = text;
@@ -170,7 +165,6 @@ $("clear-preview-btn").addEventListener("click", () => {
   editor.value = "";
   refreshPreview.cancel();
   $("preview").replaceChildren();
-  fitPreview();
   $("preview-error").hidden = true;
 });
 
@@ -335,10 +329,18 @@ $("clear-history-btn").addEventListener("click", async () => {
 
 // ------------------------------------------------------------------ recognition
 
+const SCREEN_PERMISSION_HINT =
+  "截图识别需要屏幕录制权限。请在「系统设置 → 隐私与安全性 → 屏幕录制」中打开 LaTeXSnipper，然后退出并重新打开应用。更新到新版本后需要重新授权；如果列表中的 LaTeXSnipper 已经打开但仍无法截图，请用「−」把它移除，再截图一次重新授权。";
+
 async function handleError(e: unknown, mode: Mode): Promise<void> {
   const { code, detail } = errorCode(e);
   if (code === "MODELS_MISSING") return openModels(mode);
   if (code === "EMPTY_RESULT") return toast(t("未检测到可识别内容"), true);
+  if (code === "SCREEN_PERMISSION") {
+    const ok = await ask(t(SCREEN_PERMISSION_HINT), t("打开系统设置"));
+    if (ok !== null) await api.openScreenSettings().catch((err) => toast(String(err), true));
+    return;
+  }
   toast(t("识别失败：{error}", { error: detail }), true);
 }
 

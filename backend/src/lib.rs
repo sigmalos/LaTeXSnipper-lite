@@ -116,6 +116,7 @@ pub fn run() {
             commands::recognize_image,
             commands::recognize_file,
             commands::capture,
+            commands::open_screen_settings,
             commands::take_result,
             commands::present_result,
             commands::dismiss_result,
