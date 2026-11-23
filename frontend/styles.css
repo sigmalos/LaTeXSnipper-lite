@@ -135,6 +135,123 @@ h3 {
   gap: 8px;
 }
 
+/* 识别类型: a caption and the app's own dropdown (not the native <select>). */
+.mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mode-caption {
+  color: var(--muted);
+  font-size: 12px;
+}
+.select {
+  position: relative;
+}
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 132px;
+  height: 28px;
+  padding: 0 8px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: default;
+  appearance: none;
+}
+.select-trigger:hover {
+  border-color: color-mix(in srgb, var(--ink) 35%, var(--line));
+}
+.select-trigger[aria-expanded="true"] {
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--ink-wash);
+}
+.select-trigger .chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  transition: transform 0.12s ease;
+}
+.select-trigger[aria-expanded="true"] .chevron {
+  transform: rotate(180deg);
+}
+.select-list {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 30;
+  min-width: 100%;
+  width: max-content;
+  max-width: 280px;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+}
+.select-list[hidden] {
+  display: none;
+}
+.select-list:focus {
+  outline: none;
+}
+.select-list li {
+  display: grid;
+  grid-template-columns: 14px 1fr;
+  column-gap: 6px;
+  padding: 5px 10px 6px 6px;
+  border-radius: 5px;
+  color: var(--text);
+}
+/* The ✓ column marks the selected type. */
+.select-list li::before {
+  content: "";
+  grid-row: 1 / span 2;
+  color: var(--ink);
+  font-size: 12px;
+  line-height: 18px;
+  text-align: center;
+}
+.select-list li[aria-selected="true"]::before {
+  content: "✓";
+}
+.select-option-name {
+  font-size: 13px;
+  line-height: 18px;
+}
+.select-list li[aria-selected="true"] .select-option-name {
+  font-weight: 600;
+}
+.select-option-hint {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+/* Hover and keyboard focus look like the app's other menus. */
+.select-list li.active {
+  background: var(--ink);
+  color: #fff;
+}
+.select-list li.active::before,
+.select-list li.active .select-option-hint {
+  color: inherit;
+}
+.select-list li.active .select-option-hint {
+  opacity: 0.85;
+}
+:root[data-theme="dark"] .select-list li.active {
+  color: #10172b;
+}
+
 .side-head,
 .preview-head,
 .work-head {

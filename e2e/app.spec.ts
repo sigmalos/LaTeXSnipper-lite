@@ -291,11 +291,88 @@ test.describe("copy and export", () => {
   });
 });
 
+test.describe("recognition type dropdown", () => {
+  test("lives in the main window, styled by the app, and saves the choice", async ({ page }) => {
+    await open(page, { models: { formula: true, mixed: true, text: true } });
+    const trigger = page.locator("#mode-trigger");
+    const list = page.locator("#mode-list");
+    // The app's own control, not a native <select>; Settings no longer has the radios.
+    await expect(page.locator("#mode-row select")).toHaveCount(0);
+    await expect(page.locator("#settings-form input[name=mode]")).toHaveCount(0);
+    await expect(trigger).toHaveText("公式");
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    await expect(list).toBeHidden();
+
+    await trigger.click();
+    await expect(list).toBeVisible();
+    await expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const options = list.getByRole("option");
+    await expect(options.locator(".select-option-name")).toHaveText(["公式", "混合", "纯文字"]);
+    await expect(options.nth(0)).toHaveAttribute("aria-selected", "true");
+    await expect(options.nth(1)).toHaveAttribute("aria-selected", "false");
+
+    await options.nth(1).click();
+    await expect(list).toBeHidden();
+    await expect(trigger).toHaveText("混合");
+    await expect(trigger).toBeFocused();
+    await expect(page.locator("#status")).toContainText("MathCraft 混合");
+    await expect.poll(() => mock<string>(page, "settings.mode")).toBe("mixed");
+
+    // The chosen type is what captures use.
+    await page.evaluate(() => (window as any).__mock.emit("hotkey-capture", null));
+    await expect
+      .poll(async () => (await mock<{ cmd: string; args: { mode: string } }[]>(page, "calls")).filter((c) => c.cmd === "capture").map((c) => c.args.mode))
+      .toEqual(["mixed"]);
+  });
+
+  test("works from the keyboard and closes on Escape or a click elsewhere", async ({ page }) => {
+    await open(page, { models: { formula: true, mixed: true, text: true } });
+    const trigger = page.locator("#mode-trigger");
+    const list = page.locator("#mode-list");
+    await trigger.focus();
+    await page.keyboard.press("ArrowDown");
+    await expect(list).toBeVisible();
+    await expect(list).toBeFocused();
+    await expect(list.locator("li.active")).toHaveText(/^公式/); // starts on the current type
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(list.locator("li.active")).toHaveText(/^纯文字/);
+    await expect(list).toHaveAttribute("aria-activedescendant", "mode-option-text");
+    await page.keyboard.press("ArrowDown"); // already last: stays
+    await expect(list.locator("li.active")).toHaveText(/^纯文字/);
+    await page.keyboard.press("Escape");
+    await expect(list).toBeHidden();
+    await expect(trigger).toBeFocused();
+    await expect(trigger).toHaveText("公式"); // Escape changes nothing
+
+    await page.keyboard.press("Enter");
+    await expect(list).toBeVisible();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await expect(trigger).toHaveText("纯文字");
+    await expect.poll(() => mock<string>(page, "settings.mode")).toBe("text");
+
+    await trigger.click();
+    await expect(list).toBeVisible();
+    await page.locator("#editor").click();
+    await expect(list).toBeHidden();
+  });
+
+  test("is translated", async ({ page }) => {
+    await open(page, { settings: { language: "en" } });
+    await expect(page.locator("#mode-caption")).toHaveText("Recognition type");
+    await page.click("#mode-trigger");
+    await expect(page.locator("#mode-list .select-option-name")).toHaveText(["Formula", "Mixed", "Text"]);
+    await expect(page.locator("#mode-list .select-option-hint").nth(1)).toHaveText("Text with formulas, as Markdown");
+  });
+});
+
 test.describe("settings", () => {
   test("switching mode, theme and language persists and re-renders", async ({ page }) => {
     await open(page);
+    await page.click("#mode-trigger");
+    await page.locator("#mode-list").getByText("混合", { exact: true }).click();
     await page.click("#settings-btn");
-    await page.locator("#settings-form").getByText("混合", { exact: true }).click();
     await page.locator("#settings-form").getByText("深色", { exact: true }).click();
     await page.selectOption("select[name=language]", "en");
     await page.locator("#settings-form").getByText("保存", { exact: true }).click();
@@ -851,6 +928,7 @@ test.describe("quick start spotlight tour", () => {
   const STEPS: [string, string[]][] = [
     ["截图识别", ["#capture-btn"]],
     ["图片、PDF 与手写", ["#image-btn", "#pdf-btn", "#handwriting-btn"]],
+    ["识别类型", ["#mode-row"]],
     ["编辑与预览", ["#editor", "#preview-paper"]],
     ["复制与导出", ["#copy-btn", "#export-btn"]],
     ["历史记录", ["#history"]],
@@ -889,13 +967,13 @@ test.describe("quick start spotlight tour", () => {
     await page.keyboard.press("Enter");
     await expect(page.locator(".tour-title")).toHaveText("图片、PDF 与手写");
     await page.keyboard.press("ArrowRight");
-    await expect(page.locator(".tour-title")).toHaveText("编辑与预览");
+    await expect(page.locator(".tour-title")).toHaveText("识别类型");
     await page.keyboard.press("ArrowLeft");
     await expect(page.locator(".tour-title")).toHaveText("图片、PDF 与手写");
     await page.click(".tour-back");
     await expect(page.locator(".tour-title")).toHaveText("截图识别");
     await page.keyboard.press("ArrowLeft"); // already first: stays
-    await expect(page.locator(".tour-count")).toHaveText("1 / 7");
+    await expect(page.locator(".tour-count")).toHaveText("1 / 8");
   });
 
   test("Skip and Esc end the tour, mark it seen and return focus", async ({ page }) => {
@@ -931,7 +1009,7 @@ test.describe("quick start spotlight tour", () => {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
     await page.mouse.click(600, 600); // the dimmed area does nothing either
     await expect(page.locator(".tour")).toBeVisible();
-    await expect(page.locator(".tour-count")).toHaveText("1 / 7");
+    await expect(page.locator(".tour-count")).toHaveText("1 / 8");
     const calls = await mock<{ cmd: string }[]>(page, "calls");
     expect(calls.some((c) => c.cmd === "capture")).toBe(false);
     await expect(page.locator(".tour-next")).toBeFocused();
@@ -954,7 +1032,7 @@ test.describe("quick start spotlight tour", () => {
   test("follows the layout when the window is resized", async ({ page }) => {
     await open(page);
     await page.click("#onboarding-btn");
-    for (let i = 0; i < 3; i++) await page.click(".tour-next"); // 复制与导出, top right
+    for (let i = 0; i < 4; i++) await page.click(".tour-next"); // 复制与导出, top right
     await expectSpotlight(page, "#copy-btn", "#export-btn");
     await page.setViewportSize({ width: 940, height: 600 }); // the app's minimum window size
     await expectSpotlight(page, "#copy-btn", "#export-btn");
@@ -994,21 +1072,22 @@ test.describe("quick start spotlight tour", () => {
     // What a Windows build looks like: WebView2 reports Win32, and capture is off.
     await page.addInitScript(() => Object.defineProperty(Navigator.prototype, "platform", { get: () => "Win32" }));
     await open(page, { capture_supported: false, settings: { onboarding_done: false } });
-    await expect(page.locator(".tour-count")).toHaveText("1 / 6");
+    await expect(page.locator(".tour-count")).toHaveText("1 / 7");
     await expect(page.locator(".tour-title")).toHaveText("图片、PDF 与手写");
     await expectSpotlight(page, "#image-btn", "#pdf-btn", "#handwriting-btn");
     const titles: string[] = [];
     const bodies: string[] = [];
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 7; i++) {
       titles.push((await page.locator(".tour-title").textContent()) ?? "");
       bodies.push((await page.locator(".tour-body").textContent()) ?? "");
-      if (i < 5) await page.click(".tour-next");
+      if (i < 6) await page.click(".tour-next");
     }
-    expect(titles).toEqual(["图片、PDF 与手写", "编辑与预览", "复制与导出", "历史记录", "收藏夹与设置", "后台运行"]);
+    expect(titles).toEqual(["图片、PDF 与手写", "识别类型", "编辑与预览", "复制与导出", "历史记录", "收藏夹与设置", "后台运行"]);
     const all = bodies.join(" ");
     expect(all).not.toMatch(/⌘|截图快捷键|菜单栏/);
     expect(bodies[0]).toContain("Ctrl+V");
-    expect(bodies[5]).toContain("系统托盘");
+    expect(bodies[1]).not.toContain("截图");
+    expect(bodies[6]).toContain("系统托盘");
     // The 5th step spotlights the visible tools only (快捷键 is hidden on this build).
     await page.click(".tour-back");
     await expectSpotlight(page, "#clear-history-btn", "#favorites-btn", "#settings-btn");

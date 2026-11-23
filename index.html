@@ -22,6 +22,7 @@
         <symbol id="i-star" viewBox="0 0 20 20"><path d="m10 3 2.1 4.4 4.8.6-3.5 3.3.9 4.7L10 13.7 5.7 16l.9-4.7L3.1 8l4.8-.6z"/></symbol>
         <symbol id="i-gear" viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.5"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></symbol>
         <symbol id="i-more" viewBox="0 0 20 20"><circle cx="5" cy="10" r=".9"/><circle cx="10" cy="10" r=".9"/><circle cx="15" cy="10" r=".9"/></symbol>
+        <symbol id="i-chevron" viewBox="0 0 20 20"><path d="m6 8 4 4 4-4"/></symbol>
         <symbol id="i-sort" viewBox="0 0 20 20"><path d="M6 4v12M3 13l3 3 3-3M14 16V4M11 7l3-3 3 3"/></symbol>
       </defs>
     </svg>
@@ -39,6 +40,17 @@
           <button class="btn icon-only" id="onboarding-btn" type="button" data-i18n-title="快速入门" title="快速入门">
             <svg class="ico"><use href="#i-help" /></svg>
           </button>
+        </div>
+
+        <div class="mode-row" id="mode-row">
+          <span class="mode-caption" id="mode-caption" data-i18n="识别类型">识别类型</span>
+          <div class="select">
+            <button class="select-trigger" id="mode-trigger" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="mode-list" aria-labelledby="mode-caption mode-value">
+              <span class="select-value" id="mode-value"></span>
+              <svg class="ico chevron"><use href="#i-chevron" /></svg>
+            </button>
+            <ul class="select-list" id="mode-list" role="listbox" aria-labelledby="mode-caption" tabindex="-1" hidden></ul>
+          </div>
         </div>
 
         <div class="side-head">
@@ -124,14 +136,6 @@
     <dialog id="settings-dialog" class="sheet">
       <form method="dialog" id="settings-form">
         <h3 data-i18n="设置">设置</h3>
-        <fieldset>
-          <legend data-i18n="识别类型">识别类型</legend>
-          <div class="segmented" role="radiogroup">
-            <label><input type="radio" name="mode" value="formula" /><span data-i18n="公式">公式</span></label>
-            <label><input type="radio" name="mode" value="mixed" /><span data-i18n="混合">混合</span></label>
-            <label><input type="radio" name="mode" value="text" /><span data-i18n="纯文字">纯文字</span></label>
-          </div>
-        </fieldset>
         <fieldset>
           <legend data-i18n="识别后端">识别后端</legend>
           <label class="radio"><input type="radio" name="backend" value="builtin" /><span data-i18n="内置 MathCraft（离线）">内置 MathCraft（离线）</span></label>

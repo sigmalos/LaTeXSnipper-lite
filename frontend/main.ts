@@ -112,6 +112,7 @@ function applyLanguage(): void {
   document.documentElement.lang = getLang() === "zh" ? "zh-CN" : "en";
   translateDom(document);
   $("capture-kbd").textContent = formatAccelerator(snap.settings.hotkey);
+  renderModeSelect();
   renderStatus();
   renderHistory();
   buildExportMenu();
@@ -256,6 +257,7 @@ function renderFavorites(): void {
 function closeMenus(): void {
   $("item-menu").hidden = true;
   $("export-menu").hidden = true;
+  closeModeList();
 }
 document.addEventListener("click", closeMenus);
 document.addEventListener("keydown", (e) => e.key === "Escape" && closeMenus());
@@ -526,6 +528,116 @@ async function exportAs(content: string, format: string, ext: string, label: str
   }
 }
 
+// ------------------------------------------------------------------ recognition type dropdown
+
+/** The 识别类型 dropdown in the main window: a listbox styled like the app's menus. */
+const MODE_OPTIONS: { mode: Mode; hint: string }[] = [
+  { mode: "formula", hint: "整张图是一个公式，可以有多行" },
+  { mode: "mixed", hint: "文字与公式混排，结果为 Markdown" },
+  { mode: "text", hint: "只识别文字" },
+];
+const modeTrigger = $<HTMLButtonElement>("mode-trigger");
+const modeList = $("mode-list");
+let modeActive = 0;
+
+function renderModeSelect(): void {
+  $("mode-value").textContent = modeLabel(snap.settings.mode);
+  modeList.replaceChildren(
+    ...MODE_OPTIONS.map(({ mode, hint }, i) => {
+      const li = document.createElement("li");
+      li.id = `mode-option-${mode}`;
+      li.role = "option";
+      li.dataset.mode = mode;
+      li.setAttribute("aria-selected", String(mode === snap.settings.mode));
+      li.classList.toggle("active", i === modeActive);
+      const name = document.createElement("span");
+      name.className = "select-option-name";
+      name.textContent = modeLabel(mode);
+      const sub = document.createElement("span");
+      sub.className = "select-option-hint";
+      sub.textContent = t(hint);
+      li.append(name, sub);
+      li.addEventListener("click", (e) => {
+        e.stopPropagation();
+        chooseMode(mode);
+      });
+      li.addEventListener("mousemove", () => setModeActive(i));
+      return li;
+    }),
+  );
+  if (!modeList.hidden) modeList.setAttribute("aria-activedescendant", `mode-option-${MODE_OPTIONS[modeActive].mode}`);
+}
+
+function setModeActive(i: number): void {
+  modeActive = Math.max(0, Math.min(MODE_OPTIONS.length - 1, i));
+  modeList.querySelectorAll("li").forEach((li, j) => li.classList.toggle("active", j === modeActive));
+  modeList.setAttribute("aria-activedescendant", `mode-option-${MODE_OPTIONS[modeActive].mode}`);
+}
+
+function openModeList(): void {
+  closeMenus();
+  modeActive = Math.max(0, MODE_OPTIONS.findIndex((o) => o.mode === snap.settings.mode));
+  modeList.hidden = false;
+  modeTrigger.setAttribute("aria-expanded", "true");
+  renderModeSelect();
+  modeList.focus();
+}
+
+function closeModeList(refocus = false): void {
+  if (modeList.hidden) return;
+  modeList.hidden = true;
+  modeTrigger.setAttribute("aria-expanded", "false");
+  modeList.removeAttribute("aria-activedescendant");
+  if (refocus) modeTrigger.focus();
+}
+
+/** Switch the recognition type and save it right away. */
+async function chooseMode(mode: Mode): Promise<void> {
+  closeModeList(true);
+  if (mode === snap.settings.mode) return;
+  const before = snap.settings;
+  snap.settings = { ...before, mode };
+  renderModeSelect();
+  renderStatus();
+  try {
+    snap.settings = await api.saveSettings(snap.settings);
+  } catch (e) {
+    snap.settings = before;
+    toast(errorCode(e).detail, true);
+  }
+  renderModeSelect();
+  renderStatus();
+}
+
+modeTrigger.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (modeList.hidden) openModeList();
+  else closeModeList(true);
+});
+modeTrigger.addEventListener("keydown", (e) => {
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    openModeList();
+  }
+});
+modeList.addEventListener("keydown", (e) => {
+  const moves: Record<string, number> = { ArrowDown: modeActive + 1, ArrowUp: modeActive - 1, Home: 0, End: MODE_OPTIONS.length - 1 };
+  if (e.key in moves) {
+    e.preventDefault();
+    setModeActive(moves[e.key]);
+  } else if (e.key === "Enter" || e.key === " ") {
+    e.preventDefault();
+    chooseMode(MODE_OPTIONS[modeActive].mode);
+  } else if (e.key === "Escape") {
+    e.preventDefault();
+    e.stopPropagation();
+    closeModeList(true);
+  } else if (e.key === "Tab") {
+    closeModeList();
+  }
+});
+modeList.addEventListener("click", (e) => e.stopPropagation());
+
 // ------------------------------------------------------------------ model files
 
 const MODEL_NAMES: [string, string][] = [
@@ -769,7 +881,7 @@ function readSettingsForm(): Settings {
   const fd = new FormData(form);
   return {
     ...snap.settings,
-    mode: fd.get("mode") as Mode,
+    mode: snap.settings.mode, // chosen in the main window's 识别类型 dropdown
     backend: fd.get("backend") as Settings["backend"],
     formula_model: buildDraft.formula_model,
     det_model: buildDraft.det_model,
@@ -1138,6 +1250,11 @@ const TOUR_STEPS: TourStep[] = [
     body: "也可以识别图片文件、整份 PDF，或直接手写公式。把图片拖进窗口，或在窗口里按 {paste} 粘贴也行。",
   },
   {
+    targets: ["#mode-row"],
+    title: "识别类型",
+    body: "截图、图片和粘贴识别都按这里选的类型进行：公式、混合（文字与公式混排）或纯文字。PDF 总按混合识别，手写总按公式识别。",
+  },
+  {
     targets: ["#editor", "#preview-paper"],
     title: "编辑与预览",
     body: "识别结果会先在确认窗口里让你检查和修改，确认后填入这里。下方的方格纸实时渲染公式。",
@@ -1155,7 +1272,7 @@ const TOUR_STEPS: TourStep[] = [
   {
     targets: [".side-tools"],
     title: "快捷键与设置",
-    body: "在这里更改截图快捷键、打开收藏夹。识别类型、模型下载、主题和语言都在“设置”里。",
+    body: "在这里更改截图快捷键、打开收藏夹。模型下载、主题和语言都在“设置”里。",
   },
   {
     targets: ["#onboarding-btn"],
@@ -1171,8 +1288,11 @@ const TOUR_STEPS: TourStep[] = [
 function tourSteps(): TourStep[] {
   if (snap.capture_supported) return TOUR_STEPS;
   return TOUR_STEPS.filter((s) => !s.targets.includes("#capture-btn")).map((s) => {
+    if (s.targets.includes("#mode-row")) {
+      return { ...s, body: "图片和粘贴识别都按这里选的类型进行：公式、混合（文字与公式混排）或纯文字。PDF 总按混合识别，手写总按公式识别。" };
+    }
     if (s.targets.includes(".side-tools")) {
-      return { ...s, title: "收藏夹与设置", body: "在这里打开收藏夹、清空历史。识别类型、模型下载、主题和语言都在“设置”里。" };
+      return { ...s, title: "收藏夹与设置", body: "在这里打开收藏夹、清空历史。模型下载、主题和语言都在“设置”里。" };
     }
     if (s.targets.includes("#onboarding-btn")) {
       return {

@@ -69,7 +69,7 @@ Debian 包依赖 `libwebkit2gtk-4.1-0`、`libgtk-3-0`、`libayatana-appindicator
 | | |
 |---|---|
 | **识别来源** | 屏幕截图（仅 macOS）、图片文件、拖放、剪贴板粘贴、PDF（可选页码和分辨率）、手写画布 |
-| **识别类型** | 公式 · 混合（文字 + 公式，输出 Markdown）· 纯文字 |
+| **识别类型** | 公式 · 混合（文字 + 公式，输出 Markdown）· 纯文字，在主界面左侧的下拉列表中切换 |
 | **识别引擎** | 内置 MathCraft，离线运行；也可接入任何 OpenAI 兼容接口（OpenAI、Ollama、LM Studio、vLLM 等） |
 | **编辑预览** | LaTeX 源码编辑，MathJax 实时渲染 |
 | **复制导出** | 复制为 LaTeX、`$…$`、`$$…$$`、`\[…\]`、equation、MathML；导出 TeX、Markdown、HTML、MathML、SVG、TXT，macOS 安装 Pandoc 后还可导出 Word、ODT |

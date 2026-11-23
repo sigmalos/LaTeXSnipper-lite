@@ -128,8 +128,8 @@ const EN: Record<string, string> = {
   "也可以识别图片文件、整份 PDF，或直接手写公式。把图片拖进窗口，或在窗口里按 {paste} 粘贴也行。":
     "You can also recognize image files, whole PDFs or handwriting. Dropping an image on the window or pasting with {paste} works too.",
   "收藏夹与设置": "Favorites and settings",
-  "在这里打开收藏夹、清空历史。识别类型、模型下载、主题和语言都在“设置”里。":
-    "Open your favorites or clear the history here. Recognition type, model downloads, theme and language are in Settings.",
+  "在这里打开收藏夹、清空历史。模型下载、主题和语言都在“设置”里。":
+    "Open your favorites or clear the history here. Model downloads, theme and language are in Settings.",
   "关闭窗口后应用仍在后台运行，可以从系统托盘图标重新打开或退出。想再看一遍引导，点这个按钮。":
     "Closing the window keeps the app running: reopen or quit it from the system tray icon. Click this button to see this tour again.",
   "编辑与预览": "Edit and preview",
@@ -141,8 +141,15 @@ const EN: Record<string, string> = {
   "每次确认的结果都记在这里。点一条载入编辑器，右键可以重命名、收藏或删除。":
     "Every confirmed result is kept here. Click one to load it into the editor; right-click to rename, favorite or delete it.",
   "快捷键与设置": "Shortcut and settings",
-  "在这里更改截图快捷键、打开收藏夹。识别类型、模型下载、主题和语言都在“设置”里。":
-    "Change the capture shortcut and open your favorites here. Recognition type, model downloads, theme and language are in Settings.",
+  "在这里更改截图快捷键、打开收藏夹。模型下载、主题和语言都在“设置”里。":
+    "Change the capture shortcut and open your favorites here. Model downloads, theme and language are in Settings.",
+  "截图、图片和粘贴识别都按这里选的类型进行：公式、混合（文字与公式混排）或纯文字。PDF 总按混合识别，手写总按公式识别。":
+    "Captures, images and pastes are recognized as the type chosen here: formula, mixed (text with formulas) or text. PDFs are always recognized as mixed, handwriting as a formula.",
+  "图片和粘贴识别都按这里选的类型进行：公式、混合（文字与公式混排）或纯文字。PDF 总按混合识别，手写总按公式识别。":
+    "Images and pastes are recognized as the type chosen here: formula, mixed (text with formulas) or text. PDFs are always recognized as mixed, handwriting as a formula.",
+  "整张图是一个公式，可以有多行": "The whole image is one formula, possibly multi-line",
+  "文字与公式混排，结果为 Markdown": "Text with formulas, as Markdown",
+  "只识别文字": "Text only",
   "后台运行": "Runs in the background",
   "关闭窗口后应用仍在后台运行，用 {hotkey} 或菜单栏的 Σ 图标随时截图，按 ⌘Q 完全退出。想再看一遍引导，点这个按钮。":
     "Closing the window keeps the app running: capture any time with {hotkey} or the Σ menu bar icon, and press ⌘Q to quit. Click this button to see this tour again.",
