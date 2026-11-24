@@ -8,7 +8,7 @@
 
 **系统要求**：macOS 13 或更新版本，Apple Silicon；Microsoft 365、Office 2021 或更新版本的 Word / PowerPoint for Mac。
 
-1. 打开 `LaTeXSnipper-Office_<版本>_macos-arm64.dmg`，把 **LaTeXSnipper Office** 拖进「应用程序」，再从「应用程序」打开它（直接在 DMG 里打开会提示先拖进「应用程序」）。安装包没有经过 Apple 公证，首次打开的处理方法和桌面端相同。
+1. 打开 `latexsnipper-office_<版本>_macos-arm64.dmg`，把 **LaTeXSnipper Office** 拖进「应用程序」，再从「应用程序」打开它（直接在 DMG 里打开会提示先拖进「应用程序」）。安装包没有经过 Apple 公证，首次打开的处理方法和桌面端相同。
 2. 先打开一次 Word 和（或）PowerPoint，然后回到 LaTeXSnipper Office 点「安装」。macOS 会要求输入密码，用于信任一张只对 `localhost` 有效的本地证书。Office 只从 HTTPS 加载插件页面，所以需要这张证书。
 3. 需要截图识别时，在「截图识别模型」一行点「下载」（约 109 MB，逐文件校验 SHA-256）。已经用 LaTeXSnipper 下载过模型的话，这一行会显示「使用 LaTeXSnipper 已下载的模型」，不用再下载。
 4. 重新打开 Word 或 PowerPoint，在「开始 › 加载项」中选择 LaTeXSnipper。

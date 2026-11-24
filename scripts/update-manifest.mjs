@@ -14,7 +14,7 @@ const TARGETS = [
   { keys: ["darwin-aarch64", "darwin-aarch64-app"], match: /_macos-arm64\.app\.tar\.gz$/ },
   { keys: ["windows-x86_64", "windows-x86_64-nsis"], match: /_windows-x64-setup\.exe$/ },
   // Only the .deb: an AppImage updater must not pick it up.
-  { keys: ["linux-x86_64-deb"], match: /_amd64\.deb$/ },
+  { keys: ["linux-x86_64-deb"], match: /_linux-amd64\.deb$/ },
 ];
 
 /** The release notes' own section, with the placeholders filled in. */

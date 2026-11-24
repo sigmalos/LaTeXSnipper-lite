@@ -31,14 +31,14 @@ describe("update manifest", () => {
       files: {
         "LaTeXSnipper-Lite_1.4.0_macos-arm64.app.tar.gz": "sigM\n",
         "LaTeXSnipper-Lite_1.4.0_windows-x64-setup.exe": "sigW",
-        "latexsnipper-lite_1.4.0_amd64.deb": "sigL",
+        "LaTeXSnipper-Lite_1.4.0_linux-amd64.deb": "sigL",
       },
     });
     const base = "https://github.com/o/r/releases/download/v1.4.0";
     expect(m.platforms["darwin-aarch64"]).toEqual({ signature: "sigM", url: `${base}/LaTeXSnipper-Lite_1.4.0_macos-arm64.app.tar.gz` });
     expect(m.platforms["darwin-aarch64-app"]).toEqual(m.platforms["darwin-aarch64"]);
     expect(m.platforms["windows-x86_64-nsis"].url).toBe(`${base}/LaTeXSnipper-Lite_1.4.0_windows-x64-setup.exe`);
-    expect(m.platforms["linux-x86_64-deb"].signature).toBe("sigL");
+    expect(m.platforms["linux-x86_64-deb"]).toEqual({ signature: "sigL", url: `${base}/LaTeXSnipper-Lite_1.4.0_linux-amd64.deb` });
     expect(m.platforms["linux-x86_64"]).toBeUndefined();
     expect(m).toMatchObject({ version: "1.4.0", notes: "n", pub_date: "2026-11-24T00:00:00.000Z" });
   });

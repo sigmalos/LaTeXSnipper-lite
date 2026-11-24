@@ -20,14 +20,14 @@
 |---|---|
 | macOS 13+，Apple Silicon | `LaTeXSnipper-Lite_{{VERSION}}_macos-arm64.dmg` |
 | Windows 10 / 11，x64 | `LaTeXSnipper-Lite_{{VERSION}}_windows-x64-setup.exe` |
-| Linux x64（Debian / Ubuntu 等） | `latexsnipper-lite_{{VERSION}}_amd64.deb` |
-| Word / PowerPoint for Mac 插件，Apple Silicon | `LaTeXSnipper-Office_{{OFFICE_VERSION}}_macos-arm64.dmg` |
+| Linux x64（Debian / Ubuntu 等） | `LaTeXSnipper-Lite_{{VERSION}}_linux-amd64.deb` |
+| Word / PowerPoint for Mac 插件，Apple Silicon | `latexsnipper-office_{{OFFICE_VERSION}}_macos-arm64.dmg` |
 | 源代码 | 页面底部的 `Source code (zip)` / `Source code (tar.gz)` |
 
 - **macOS**：安装包未经 Apple 公证，首次打开若提示无法验证，请在「系统设置 → 隐私与安全性」底部点「仍要打开」。第一次截图时按提示在「屏幕录制」中允许 LaTeXSnipper。
 - **Windows**：安装包未签名，SmartScreen 提示时点「更多信息 → 仍要运行」。安装无需管理员权限；缺少 Microsoft Edge WebView2 Runtime 时安装程序会自动下载。应用以「LaTeXSnipper Lite」的名字单独安装，可与原版同时使用，数据保存在 `%LOCALAPPDATA%\LaTeXSnipper Lite`。
 - **Windows 上代替截图识别**：先用系统自带的 **Win + Shift + S** 截图，再回到应用按 **Ctrl + V** 粘贴识别。
-- **Linux**：`sudo apt install ./latexsnipper-lite_{{VERSION}}_amd64.deb`，依赖的 WebKitGTK 等库由 apt 自动安装。
+- **Linux**：`sudo apt install ./LaTeXSnipper-Lite_{{VERSION}}_linux-amd64.deb`，依赖的 WebKitGTK 等库由 apt 自动安装。
 - **Office 插件**：单独安装，不依赖桌面端。打开 DMG 把「LaTeXSnipper Office」拖进「应用程序」，打开后点「安装」，步骤见 `office_plugin/README.md`。
 - 识别模型不在安装包里，第一次打开应用时自动在后台下载四个模型（共约 62 MB），并逐文件校验 SHA-256。
 
@@ -43,9 +43,7 @@
   sudo apt remove la-te-x-snipper
   mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}"
   mv "$HOME/Library/Application Support/LaTeXSnipper" "${XDG_DATA_HOME:-$HOME/.local/share}/latexsnipper-lite"
-  sudo apt install ./latexsnipper-lite_{{VERSION}}_amd64.deb
+  sudo apt install ./LaTeXSnipper-Lite_{{VERSION}}_linux-amd64.deb
   ```
 
   不移动旧数据也能使用，只是需要重新下载模型，历史和收藏从空白开始。
-
-校验文件完整性：`sha256sum -c SHA256SUMS.txt`（macOS 用 `shasum -a 256 -c SHA256SUMS.txt`）。

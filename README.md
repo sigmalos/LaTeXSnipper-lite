@@ -46,7 +46,7 @@ Windows 版没有截图识别。可以先用系统自带的 **Win+Shift+S** 截�
 **系统要求**：x86_64，Debian / Ubuntu 等使用 `.deb` 的发行版。
 
 ```sh
-sudo apt install ./latexsnipper-lite_<版本>_amd64.deb
+sudo apt install ./LaTeXSnipper-Lite_<版本>_linux-amd64.deb
 ```
 
 Debian 包依赖 `libwebkit2gtk-4.1-0`、`libgtk-3-0`、`libayatana-appindicator3-1`，安装时由 apt 自动补齐。数据保存在 `~/.local/share/latexsnipper-lite`（遵循 `XDG_DATA_HOME`）。Linux 版同样没有截图识别，可以粘贴、拖入或导入图片。
@@ -91,7 +91,7 @@ Debian 包依赖 `libwebkit2gtk-4.1-0`、`libgtk-3-0`、`libayatana-appindicator
 
 ## Office 插件（macOS）
 
-在 Word 和 PowerPoint for Mac 中插入、编辑可以再次修改的 LaTeX 公式。插件是单独的应用 **LaTeXSnipper Office**，有自己的 DMG（`LaTeXSnipper-Office_<版本>_macos-arm64.dmg`），和桌面端分开构建、分开安装。装好后它随登录在后台运行，**不打开、甚至不安装 LaTeXSnipper 桌面端也能完整使用**，截图识别也由插件自己完成。
+在 Word 和 PowerPoint for Mac 中插入、编辑可以再次修改的 LaTeX 公式。插件是单独的应用 **LaTeXSnipper Office**，有自己的 DMG（`latexsnipper-office_<版本>_macos-arm64.dmg`），和桌面端分开构建、分开安装。装好后它随登录在后台运行，**不打开、甚至不安装 LaTeXSnipper 桌面端也能完整使用**，截图识别也由插件自己完成。
 
 1. 打开 DMG，把 **LaTeXSnipper Office** 拖进「应用程序」，从那里打开它。
 2. 先打开一次 Word 和（或）PowerPoint，回到 LaTeXSnipper Office 点「安装」。macOS 会要求输入密码，用来信任一张只对 `localhost` 有效的证书。
@@ -175,14 +175,25 @@ Office 插件在 `office_plugin/` 中单独构建（`cd office_plugin && npm ci 
 <details>
 <summary><b>发布与签名</b></summary>
 
-推送 `v*.*.*` 标签后，Release 工作流构建三个平台的安装包并发布到 GitHub Releases，同时上传应用内更新用的签名包和 `latest.json`。它需要四个仓库 Secrets：
+推送 `v*.*.*` 标签后，Release 工作流构建三个平台的安装包并发布到 GitHub Releases。每个 Release 只允许有以下六个文件，多一个、少一个或名字不对，工作流都会失败，Release 不会公开（先建草稿，检查通过后才发布）：
+
+| 文件 | 内容 |
+|---|---|
+| `LaTeXSnipper-Lite_<版本>_macos-arm64.dmg` | macOS 安装包 |
+| `LaTeXSnipper-Lite_<版本>_windows-x64-setup.exe` | Windows 安装程序 |
+| `LaTeXSnipper-Lite_<版本>_linux-amd64.deb` | Linux 安装包 |
+| `latexsnipper-office_<插件版本>_macos-arm64.dmg` | Word / PowerPoint for Mac 插件（全小写，与桌面端区分） |
+| `LaTeXSnipper-Lite_<版本>_macos-arm64.app.tar.gz` | macOS 自动更新包（Windows 和 Linux 直接用安装包更新） |
+| `latest.json` | 自动更新清单，各平台更新包的签名写在里面 |
+
+文件名和检查规则定义在 `scripts/release-assets.mjs`。工作流需要四个仓库 Secrets：
 
 | Secret | 用途 |
 |---|---|
 | `TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | 更新包签名私钥及其密码。对应的公钥写在 `backend/tauri.conf.json` 的 `plugins.updater.pubkey` 中，应用只安装用这把私钥签名的更新 |
 | `MACOS_CERTIFICATE`、`MACOS_CERTIFICATE_PASSWORD` | macOS 自签名代码签名证书（p12 的 base64）及其密码，由 `scripts/import-signing-cert.sh` 导入。固定的证书让 macOS 在更新后保留屏幕录制权限 |
 
-两把私钥都要妥善备份：丢失更新私钥后，已安装的应用再也无法自动更新；更换 macOS 证书后，用户需要重新授权屏幕录制。没有这些 Secrets 时，工作流仍会发布安装包，只是不带自动更新，macOS 版退回 ad-hoc 签名。`latest.json` 由 `scripts/update-manifest.mjs` 生成，更新日志取自 `.github/release-notes.md` 中当前版本的「更新内容」一节。
+两把私钥都要妥善备份：丢失更新私钥后，已安装的应用再也无法自动更新；更换 macOS 证书后，用户需要重新授权屏幕录制。没有更新私钥时生成不了 `latest.json` 和 macOS 更新包，发布会失败；没有 macOS 证书时 macOS 版退回 ad-hoc 签名。`latest.json` 由 `scripts/update-manifest.mjs` 生成，更新日志取自 `.github/release-notes.md` 中当前版本的「更新内容」一节。
 
 </details>
 
@@ -221,7 +232,7 @@ crates/mathcraft/     MathCraft 识别引擎（桌面端与 Office 插件共用�
 office_plugin/        Word / PowerPoint for Mac 插件，单独构建（见其 README）
 tests/unit/           前端单元测试
 e2e/                  界面端到端测试
-scripts/              安装包冒烟测试、签名证书导入、更新清单（latest.json）生成
+scripts/              安装包冒烟测试、签名证书导入、更新清单（latest.json）生成、Release 文件检查
 ```
 
 </details>

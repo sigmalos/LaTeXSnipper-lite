@@ -134,7 +134,7 @@ jobs:
                 cp $BUNDLE/macos/*.app.tar.gz.sig "out/LaTeXSnipper-Lite_${VERSION}_macos-arm64.app.tar.gz.sig"
               fi ;;
             linux)
-              deb="out/latexsnipper-lite_${VERSION}_amd64.deb"
+              deb="out/LaTeXSnipper-Lite_${VERSION}_linux-amd64.deb"
               cp $BUNDLE/deb/*.deb "$deb"
               if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then npx tauri signer sign "$deb"; fi ;;
             windows)
@@ -165,11 +165,12 @@ jobs:
       - name: Build LaTeXSnipper Office.app and its DMG (built separately from the desktop app)
         working-directory: office_plugin
         run: npm ci && npm test && npm run build
+      # All lowercase, so it is not mistaken for the desktop app's DMG.
       - name: Name the DMG
         run: |
           mkdir out
           cp office_plugin/release/LaTeXSnipperOffice_*_macos_arm64.dmg \
-            "out/LaTeXSnipper-Office_$(node -p "require('./office_plugin/package.json').version")_macos-arm64.dmg"
+            "out/latexsnipper-office_$(node -p "require('./office_plugin/package.json').version")_macos-arm64.dmg"
           ls -l out
       - uses: actions/upload-artifact@v7
         with:
@@ -195,25 +196,29 @@ jobs:
           pattern: installer-*
           path: out
           merge-multiple: true
-      # The in-app updater reads …/releases/latest/download/latest.json.
+      # The in-app updater reads …/releases/latest/download/latest.json. The
+      # signatures go into it; the .sig files themselves are not published.
       - name: Update manifest
         run: |
-          if ls out/*.sig >/dev/null 2>&1; then
-            node scripts/update-manifest.mjs out "$VERSION" "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
-            cat out/latest.json
-          else
-            echo "no signed update packages; publishing without latest.json"
-          fi
-      - name: Checksums
-        working-directory: out
-        run: sha256sum * > SHA256SUMS.txt && cat SHA256SUMS.txt
-      - name: Create the release (all platforms at once)
+          node scripts/update-manifest.mjs out "$VERSION" "https://github.com/$GITHUB_REPOSITORY/releases/download/$GITHUB_REF_NAME"
+          cat out/latest.json
+          mkdir signatures && mv out/*.sig signatures/
+      # A release holds exactly: the app DMG, the Office add-in DMG, the Windows
+      # setup.exe, the Linux .deb, plus latest.json and the macOS update package.
+      - name: Check the release files
         run: |
           office=$(node -p "require('./office_plugin/package.json').version")
-          sed -e "s/{{VERSION}}/$VERSION/g" -e "s/{{OFFICE_VERSION}}/$office/g" .github/release-notes.md > notes.md
+          echo "OFFICE_VERSION=$office" >> "$GITHUB_ENV"
+          node scripts/release-assets.mjs check-dir out "$VERSION" "$office"
+      - name: Create the release (all platforms at once)
+        run: |
+          sed -e "s/{{VERSION}}/$VERSION/g" -e "s/{{OFFICE_VERSION}}/$OFFICE_VERSION/g" .github/release-notes.md > notes.md
           if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release upload "$GITHUB_REF_NAME" out/* --clobber
           else
-            gh release create "$GITHUB_REF_NAME" out/* --verify-tag \
+            # A draft until its files are checked, so a wrong set is never public.
+            gh release create "$GITHUB_REF_NAME" out/* --verify-tag --draft \
               --title "LaTeXSnipper Lite $VERSION" --notes-file notes.md --generate-notes
           fi
+          node scripts/release-assets.mjs check-release "$GITHUB_REF_NAME" "$VERSION" "$OFFICE_VERSION"
+          gh release edit "$GITHUB_REF_NAME" --draft=false
