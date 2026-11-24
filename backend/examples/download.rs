@@ -1,9 +1,9 @@
 //! `cargo run --release --example download -- <data_dir> <model-id>`
-//! A built-in model goes the same path as the Settings "下载" button
+//! A model Settings offers goes the same path as its "下载" button
 //! (Core::download_model). Any other model in the manifest (the FP32 formula
 //! models the engine parity test and the Office add-in use) is fetched with the
 //! same verified downloader into the same models directory.
-use latexsnipper_lib::commands::{Core, BUILTIN_MODELS};
+use latexsnipper_lib::commands::{is_known_model, Core};
 use latexsnipper_lib::modelhub;
 
 fn main() -> anyhow::Result<()> {
@@ -21,7 +21,7 @@ fn main() -> anyhow::Result<()> {
             last = pct;
         }
     };
-    if !BUILTIN_MODELS.contains(&id) {
+    if !is_known_model(id) {
         modelhub::download(&dir.join("MathCraft/models"), id, &mut progress)?;
         println!("{id:<28} installed (not built-in)");
         return Ok(());

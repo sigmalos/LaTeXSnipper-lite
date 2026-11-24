@@ -4,7 +4,8 @@
 //! Qt app so existing user data under `~/Library/Application Support/LaTeXSnipper`
 //! loads without migration.
 
-use crate::ocr::Mode;
+use crate::commands::Slot;
+use crate::ocr::{models, Mode};
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -29,10 +30,73 @@ pub struct Settings {
     pub external_timeout_sec: u64,
     pub external_custom_prompt: String,
     pub onboarding_done: bool,
+    /// The model chosen for each part of local recognition.
+    pub local_models: LocalModels,
     /// Schema version. A missing field must read as 0 (not the struct
     /// default) so files written before migrations existed get upgraded.
     #[serde(default)]
     pub version: u32,
+}
+
+/// The model id chosen for each part of local recognition. Ids are checked
+/// against [`crate::commands::MODEL_OPTIONS`].
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(default)]
+pub struct LocalModels {
+    pub formula_det: String,
+    pub formula_rec: String,
+    pub text_det: String,
+    pub text_rec: String,
+}
+
+impl Default for LocalModels {
+    fn default() -> Self {
+        Self {
+            formula_det: models::FORMULA_DET_INT8.into(),
+            formula_rec: models::FORMULA_REC_INT8.into(),
+            text_det: models::TEXT_DET.into(),
+            text_rec: models::TEXT_REC.into(),
+        }
+    }
+}
+
+impl LocalModels {
+    pub fn get(&self, slot: Slot) -> &str {
+        match slot {
+            Slot::FormulaDet => &self.formula_det,
+            Slot::FormulaRec => &self.formula_rec,
+            Slot::TextDet => &self.text_det,
+            Slot::TextRec => &self.text_rec,
+        }
+    }
+
+    fn get_mut(&mut self, slot: Slot) -> &mut String {
+        match slot {
+            Slot::FormulaDet => &mut self.formula_det,
+            Slot::FormulaRec => &mut self.formula_rec,
+            Slot::TextDet => &mut self.text_det,
+            Slot::TextRec => &mut self.text_rec,
+        }
+    }
+
+    /// The first slot whose model is not one of its options.
+    fn invalid(&self) -> Option<Slot> {
+        Slot::ALL
+            .into_iter()
+            .find(|&slot| !crate::commands::is_option(slot, self.get(slot)))
+    }
+
+    /// Replace models this version does not offer (a newer or older app wrote
+    /// them) with the defaults. Returns whether anything changed.
+    pub fn repair(&mut self) -> bool {
+        let defaults = Self::default();
+        let mut changed = false;
+        while let Some(slot) = self.invalid() {
+            *self.get_mut(slot) = defaults.get(slot).to_string();
+            changed = true;
+        }
+        changed
+    }
 }
 
 /// ⌘F, matching the original app's macOS default.
@@ -69,6 +133,7 @@ impl Default for Settings {
             external_timeout_sec: 60,
             external_custom_prompt: String::new(),
             onboarding_done: false,
+            local_models: LocalModels::default(),
             version: SETTINGS_VERSION,
         }
     }
@@ -90,6 +155,9 @@ impl Settings {
         }
         if self.external_timeout_sec == 0 || self.external_timeout_sec > 600 {
             bail!("timeout must be between 1 and 600 seconds");
+        }
+        if let Some(slot) = self.local_models.invalid() {
+            bail!("unknown {slot:?} model {:?}", self.local_models.get(slot));
         }
         Ok(())
     }
@@ -206,6 +274,11 @@ impl Store {
     pub fn open(dir: &Path) -> Self {
         let mut settings = read_json(&dir.join("settings.json"))
             .and_then(|v| serde_json::from_value::<Settings>(v).ok())
+            .map(|mut s| {
+                // A model choice this build lacks must not reset everything else.
+                s.local_models.repair();
+                s
+            })
             .filter(|s| s.validate().is_ok())
             .unwrap_or_default();
         if migrate(&mut settings) {
@@ -442,6 +515,41 @@ mod tests {
             );
         }
         assert_eq!(Store::open(dir.path()).settings, good);
+    }
+
+    #[test]
+    fn local_model_choices_are_validated_and_repaired() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut s = Store::open(dir.path());
+        assert_eq!(
+            s.settings.local_models.formula_rec,
+            models::FORMULA_REC_INT8
+        );
+        let mut texo = Settings::default();
+        texo.local_models.formula_rec = models::TEXO_FORMULA_REC.into();
+        s.save_settings(texo.clone()).unwrap();
+        assert_eq!(Store::open(dir.path()).settings, texo);
+
+        // Texo is a recognizer, not a detector; FP32 is not offered here.
+        for (slot, id) in [
+            (Slot::FormulaDet, models::TEXO_FORMULA_REC),
+            (Slot::FormulaRec, models::FORMULA_REC),
+            (Slot::TextRec, "../escape"),
+        ] {
+            let mut bad = texo.clone();
+            *bad.local_models.get_mut(slot) = id.into();
+            assert!(s.save_settings(bad).is_err(), "{slot:?} {id}");
+        }
+
+        // An unknown choice on disk falls back to its default and keeps the rest.
+        std::fs::write(
+            dir.path().join("settings.json"),
+            r#"{"theme":"dark","local_models":{"formula_rec":"future-model"}}"#,
+        )
+        .unwrap();
+        let loaded = Store::open(dir.path()).settings;
+        assert_eq!(loaded.theme, "dark");
+        assert_eq!(loaded.local_models, LocalModels::default());
     }
 
     #[test]

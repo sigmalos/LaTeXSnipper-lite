@@ -566,7 +566,7 @@ test.describe("settings", () => {
     await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   });
 
-  test("built-in backend lists the four Int8 models with their download state", async ({ page }) => {
+  test("local models list one row per part, each with its model dropdown", async ({ page }) => {
     await open(page, { models: { formula: true, mixed: false, text: false } });
     await page.click("#settings-btn");
     const panel = page.locator("#builtin-fields");
@@ -590,9 +590,83 @@ test.describe("settings", () => {
     await expect(rows.locator(".model-size")).toHaveText(["20 MB", "24 MB", "4.3 MB", "13 MB"]);
     await expect(rows.locator(".model-state")).toHaveText(["未下载", "已下载", "未下载", "未下载"]);
     await expect(rows.locator(".model-download")).toHaveText(["下载", "重新下载", "下载", "下载"]);
-    // No build to choose any more: no 选用 buttons, no Int8 tooltips.
-    await expect(panel.locator(".model-pick, .model-help, input[type=radio]")).toHaveCount(0);
+    // Each part is a dropdown of its models; only 公式识别 has a second one (Texo).
+    const selects = rows.locator("select.model-select");
+    await expect(selects).toHaveCount(4);
+    expect(await selects.evaluateAll((els) => els.map((el) => [...(el as HTMLSelectElement).options].map((o) => o.text)))).toEqual([
+      ["MathCraft（未下载）"],
+      ["MathCraft", "Texo（未下载）"],
+      ["MathCraft（未下载）"],
+      ["MathCraft（未下载）"],
+    ]);
     await expect(panel).not.toContainText("Int8");
+  });
+
+  test("Texo can be chosen, downloaded and used for formula recognition", async ({ page }) => {
+    await open(page, { models: { formula: true, mixed: false, text: false } });
+    await page.click("#settings-btn");
+    const rec = page.locator('.model-row[data-slot="formula_rec"]');
+    await rec.locator("select").selectOption("texo-formula-rec-q8");
+    // The row now shows Texo: its size, state and download button.
+    await expect(rec).toHaveAttribute("data-model", "texo-formula-rec-q8");
+    await expect(rec.locator(".model-size")).toHaveText("22 MB");
+    await expect(rec.locator(".model-state")).toHaveText("未下载");
+    await expect(rec.locator(".model-delete")).toBeHidden();
+    await expect(page.locator("#models-count")).toHaveText("已下载 0/4");
+    await rec.locator(".model-download").click();
+    await expect(rec.locator(".model-state")).toHaveText("已下载");
+    await expect(page.locator(".toast").last()).toContainText("Texo 公式识别 已下载");
+    await expect(rec.locator("select option")).toHaveText(["MathCraft", "Texo"]);
+    // Nothing changes until Save.
+    expect((await mock<{ local_models: Record<string, string> }>(page, "settings")).local_models.formula_rec).toBe(
+      "mathcraft-formula-rec-int8",
+    );
+    await page.locator("#settings-form").getByText("保存", { exact: true }).click();
+    await expect(page.locator("#status")).toContainText("当前模型: Texo 公式 | 状态: 就绪");
+    const saved = await mock<{ local_models: Record<string, string> }>(page, "settings");
+    expect(saved.local_models).toEqual({
+      formula_det: "mathcraft-formula-det-int8",
+      formula_rec: "texo-formula-rec-q8",
+      text_det: "mathcraft-text-det",
+      text_rec: "mathcraft-text-rec",
+    });
+    // Reopening shows the saved choice.
+    await page.click("#settings-btn");
+    await expect(rec.locator("select")).toHaveValue("texo-formula-rec-q8");
+  });
+
+  test("a model chosen but not saved is dropped on cancel", async ({ page }) => {
+    await open(page);
+    await page.click("#settings-btn");
+    const rec = page.locator('.model-row[data-slot="formula_rec"]');
+    await rec.locator("select").selectOption("texo-formula-rec-q8");
+    await page.locator("#settings-form").getByText("取消", { exact: true }).click();
+    await page.click("#settings-btn");
+    await expect(rec.locator("select")).toHaveValue("mathcraft-formula-rec-int8");
+    await expect(page.locator("#status")).toContainText("当前模型: MathCraft 公式");
+  });
+
+  test("a chosen Texo that is missing is offered for download when recognizing", async ({ page }) => {
+    await open(page, {
+      models: { formula: true, mixed: false, text: false },
+      settings: {
+        local_models: {
+          formula_det: "mathcraft-formula-det-int8",
+          formula_rec: "texo-formula-rec-q8",
+          text_det: "mathcraft-text-det",
+          text_rec: "mathcraft-text-rec",
+        },
+      },
+    });
+    await expect(page.locator("#status")).toContainText("Texo 公式 | 状态: 需下载模型");
+    await page.click("#capture-btn");
+    await expect(page.locator("#models-dialog")).toBeVisible();
+    await expect(page.locator("#models-text")).toContainText("22 MB");
+    await page.click("#models-start");
+    await expect(page.locator("#models-dialog")).toBeHidden();
+    const calls = await mock<{ cmd: string; args: { mode: string } }[]>(page, "calls");
+    expect(calls.filter((c) => c.cmd === "download_models").map((c) => c.args.mode)).toEqual(["formula"]);
+    expect(await mock<boolean>(page, 'installed.has("texo-formula-rec-q8")')).toBe(true);
   });
 
   test("the first launch's background download shows in the status and model list", async ({ page }) => {
@@ -627,10 +701,10 @@ test.describe("settings", () => {
     await open(page);
     await page.click("#settings-btn");
     const form = page.locator("#settings-form");
-    await form.getByText("外部模型（OpenAI 兼容接口）").click();
+    await form.getByText("在线模型", { exact: true }).click();
     await expect(page.locator("#builtin-fields")).toBeHidden();
     await expect(page.locator("#external-fields")).toBeVisible();
-    await form.getByText("内置 MathCraft（离线）").click();
+    await form.getByText("本地模型", { exact: true }).click();
     await expect(page.locator("#builtin-fields")).toBeVisible();
     await expect(page.locator("#external-fields")).toBeHidden();
   });
@@ -655,7 +729,7 @@ test.describe("settings", () => {
     await expect(row("mathcraft-text-det").locator(".model-state")).toHaveText("已下载");
     await expect(row("mathcraft-text-det").locator(".model-download")).toHaveText("重新下载");
     await expect(page.locator("#models-count")).toHaveText("已下载 2/4");
-    await expect(page.locator(".toast").last()).toContainText("文字检测 已下载");
+    await expect(page.locator(".toast").last()).toContainText("MathCraft 文字检测 已下载");
     await expect(page.locator("#status")).toContainText("需下载模型");
 
     await row("mathcraft-text-rec").locator(".model-download").click();
@@ -744,7 +818,7 @@ test.describe("settings", () => {
     const row = page.locator('.model-row[data-model="mathcraft-formula-rec-int8"]');
     await row.locator(".model-delete").click();
     await expect(page.locator("#ask-text")).toHaveText(
-      "删除“公式识别”模型？公式、混合识别将无法使用，需要时可重新下载（24 MB）。",
+      "删除“MathCraft 公式识别”模型？公式、混合识别将无法使用，需要时可重新下载（24 MB）。",
     );
     await expect(page.locator("#ask-ok")).toHaveText("删除");
     await expect(page.locator("#ask-ok")).toHaveClass(/destructive/);
@@ -759,7 +833,7 @@ test.describe("settings", () => {
     await expect(row.locator(".model-delete")).toBeHidden();
     await expect(row.locator(".model-download")).toHaveText("下载");
     await expect(page.locator("#models-count")).toHaveText("已下载 3/4");
-    await expect(page.locator(".toast").last()).toContainText("公式识别 已删除");
+    await expect(page.locator(".toast").last()).toContainText("MathCraft 公式识别 已删除");
     await expect(page.locator("#settings-dialog")).toBeVisible(); // still in Settings
     await expect(page.locator("#status")).toContainText("需下载模型"); // formula mode lost its model
     const calls = await mock<{ cmd: string; args: { model: string } }[]>(page, "calls");
@@ -808,7 +882,7 @@ test.describe("settings", () => {
     await open(page);
     await page.click("#settings-btn");
     await expect(page.locator("#external-fields")).toBeHidden();
-    await page.getByText("外部模型（OpenAI 兼容接口）").click();
+    await page.getByText("在线模型", { exact: true }).click();
     await expect(page.locator("#external-fields")).toBeVisible();
     await page.click("#test-external");
     await expect(page.locator("#test-result")).toContainText("连接失败：external model name is required");
@@ -816,7 +890,7 @@ test.describe("settings", () => {
     await page.click("#test-external");
     await expect(page.locator("#test-result")).toContainText("连接成功：OK (3 models)");
     await page.locator("#settings-form").getByText("保存", { exact: true }).click();
-    await expect(page.locator("#status")).toContainText("外部模型 qwen2.5vl:7b");
+    await expect(page.locator("#status")).toContainText("在线模型 qwen2.5vl:7b");
   });
 
   test("hotkey recorder validates and saves", async ({ page }) => {

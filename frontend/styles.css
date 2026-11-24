@@ -859,6 +859,10 @@ input[readonly] {
 input[type="radio"] {
   accent-color: var(--ink);
 }
+label.radio .radio-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
 .grid2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -915,10 +919,24 @@ input[type="radio"] {
 .model-row + .model-row {
   border-top: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
 }
+.model-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
 .model-name {
-  display: block;
+  flex: none;
   color: var(--text);
   font-size: 13px;
+}
+/* The model chosen for this part; its state and buttons follow the choice. */
+.model-title select.model-select {
+  min-width: 0;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 4px;
+  font-size: 12px;
 }
 .model-use {
   display: block;

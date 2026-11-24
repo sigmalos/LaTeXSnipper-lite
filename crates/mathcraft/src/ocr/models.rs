@@ -1,8 +1,10 @@
 //! ONNX Runtime wrappers for the MathCraft models.
 
 use super::geometry::{components, min_area_rect, mini_box, point_in_polygon, unclip_rect, Pt};
+use super::gguf::Gguf;
 use super::gpu::{self, Gpu};
 use super::imageops::{resize, round_half_even, to_chw};
+use super::texo;
 use super::tokenizer::Tokenizer;
 use anyhow::{anyhow, bail, Context, Result};
 use image::{imageops::FilterType, Rgb, RgbImage};
@@ -20,6 +22,8 @@ pub const FORMULA_DET_INT8: &str = "mathcraft-formula-det-int8";
 pub const FORMULA_REC: &str = "mathcraft-formula-rec";
 /// Dynamically quantized (Int8) build of the formula recognizer: same files, smaller and faster.
 pub const FORMULA_REC_INT8: &str = "mathcraft-formula-rec-int8";
+/// Texo (distilled PP-FormulaNet-S) formula recognizer, a Q8_0 GGUF file.
+pub const TEXO_FORMULA_REC: &str = "texo-formula-rec-q8";
 pub const TEXT_DET: &str = "mathcraft-text-det";
 pub const TEXT_REC: &str = "mathcraft-text-rec";
 pub const MAX_NEW_TOKENS: usize = 512;
@@ -58,6 +62,26 @@ fn open_decoder(path: &Path, gpu: Option<&Gpu>) -> Result<Session> {
     builder_for(gpu)?
         .commit_from_memory(&graph)
         .with_context(|| format!("failed to load {}", path.display()))
+}
+
+/// Load one half of a GGUF formula model, rebuilt as an ONNX graph.
+fn open_gguf(
+    path: &Path,
+    gpu: Option<&Gpu>,
+    build: fn(&Gguf) -> Result<Vec<u8>>,
+) -> Result<Session> {
+    let graph = build(&Gguf::open(path)?)?;
+    builder_for(gpu)?
+        .commit_from_memory(&graph)
+        .with_context(|| format!("failed to load {}", path.display()))
+}
+
+fn open_texo_encoder(path: &Path, gpu: Option<&Gpu>) -> Result<Session> {
+    open_gguf(path, gpu, texo::encoder_graph)
+}
+
+fn open_texo_decoder(path: &Path, gpu: Option<&Gpu>) -> Result<Session> {
+    open_gguf(path, gpu, texo::decoder_graph)
 }
 
 fn find_onnx(dir: &Path, needle: &str) -> Result<PathBuf> {
@@ -182,59 +206,113 @@ fn f32_output(outputs: &ort::session::SessionOutputs<'_>) -> Result<(Vec<i64>, V
 
 // ------------------------------------------------------------- formula rec
 
+/// Where a formula recognizer's weights come from.
+enum Source {
+    /// A MathCraft (VisionEncoderDecoder) export: encoder/decoder ONNX files
+    /// with a Hugging Face tokenizer and generation config.
+    Onnx(PathBuf),
+    /// A single GGUF file (Texo) holding weights and vocabulary.
+    Gguf(Result<PathBuf, String>),
+}
+
+/// What decoding needs besides the two sessions.
+struct Meta {
+    tokenizer: Tokenizer,
+    start_id: i64,
+    /// Tokens that end a sequence.
+    stop: Vec<i64>,
+}
+
 pub struct FormulaRecognizer {
     encoder: Lazy,
     decoder: Lazy,
-    tokenizer: OnceLock<Result<Tokenizer, String>>,
-    dir: PathBuf,
+    meta: OnceLock<Result<Meta, String>>,
+    source: Source,
 }
 
 impl FormulaRecognizer {
+    /// A MathCraft recognizer from a directory of ONNX files.
     pub fn new(dir: PathBuf) -> Self {
         Self {
             encoder: Lazy::new(Ok(dir.join("encoder_model.onnx"))),
             decoder: Lazy::with_loader(Ok(dir.join("decoder_model.onnx")), open_decoder),
-            tokenizer: OnceLock::new(),
-            dir,
+            meta: OnceLock::new(),
+            source: Source::Onnx(dir),
         }
     }
 
-    fn tokenizer(&self) -> Result<&Tokenizer> {
-        self.tokenizer
-            .get_or_init(|| Tokenizer::from_dir(&self.dir).map_err(|e| e.to_string()))
+    /// A Texo recognizer from the directory holding its `.gguf` file.
+    pub fn gguf(dir: PathBuf) -> Self {
+        let file = texo::find_gguf(&dir);
+        let file_for = |load| {
+            Lazy::with_loader(
+                file.as_ref()
+                    .map(PathBuf::clone)
+                    .map_err(|e| anyhow!("{e:#}")),
+                load,
+            )
+        };
+        Self {
+            encoder: file_for(open_texo_encoder),
+            decoder: file_for(open_texo_decoder),
+            meta: OnceLock::new(),
+            source: Source::Gguf(file.map_err(|e| format!("{e:#}"))),
+        }
+    }
+
+    fn meta(&self) -> Result<&Meta> {
+        self.meta
+            .get_or_init(|| self.load_meta().map_err(|e| format!("{e:#}")))
             .as_ref()
             .map_err(|e| anyhow!(e.clone()))
     }
 
-    fn generation_ids(&self) -> (i64, Option<i64>) {
-        let read = |name: &str| -> Option<serde_json::Value> {
-            serde_json::from_str(
-                std::fs::read_to_string(self.dir.join(name))
-                    .ok()?
-                    .trim_start_matches('\u{feff}'),
-            )
-            .ok()
-        };
-        let (mut start, mut eos) = (None, None);
-        for v in [read("generation_config.json"), read("config.json")]
-            .into_iter()
-            .flatten()
-        {
-            start = start
-                .or(v["decoder_start_token_id"].as_i64())
-                .or(v["decoder"]["decoder_start_token_id"].as_i64());
-            eos = eos
-                .or(v["eos_token_id"].as_i64())
-                .or(v["decoder"]["eos_token_id"].as_i64());
+    fn load_meta(&self) -> Result<Meta> {
+        match &self.source {
+            Source::Onnx(dir) => {
+                let (start_id, eos) = generation_ids(dir);
+                Ok(Meta {
+                    tokenizer: Tokenizer::from_dir(dir)?,
+                    start_id,
+                    stop: eos.into_iter().collect(),
+                })
+            }
+            Source::Gguf(file) => {
+                let g = Gguf::open(file.as_ref().map_err(|e| anyhow!(e.clone()))?)?;
+                let config = texo::config(&g)?;
+                Ok(Meta {
+                    tokenizer: texo::tokenizer(&g)?,
+                    start_id: config.start_id,
+                    stop: vec![config.eos_id, config.pad_id],
+                })
+            }
         }
-        (start.unwrap_or(2), eos.or(Some(2)))
     }
 
     pub fn warmup(&self) -> Result<()> {
         self.encoder.get()?;
         self.decoder.get()?;
-        self.tokenizer()?;
+        self.meta()?;
         Ok(())
+    }
+
+    /// The encoder input for a batch of crops: `[N, 3, 384, 384]`.
+    fn pixels(&self, images: &[RgbImage]) -> Vec<f32> {
+        const SIZE: u32 = 384;
+        let plane = (SIZE * SIZE * 3) as usize;
+        let mut pixels = Vec::with_capacity(plane * images.len());
+        for img in images {
+            let mut img = img.clone();
+            super::imageops::normalize_polarity(&mut img);
+            match self.source {
+                Source::Onnx(_) => {
+                    let resized = resize(&img, SIZE, SIZE, FilterType::CatmullRom);
+                    pixels.extend(to_chw(&resized, 1.0 / 255.0, [0.5; 3], [0.5; 3], false));
+                }
+                Source::Gguf(_) => pixels.extend(texo::preprocess(&img, SIZE)),
+            }
+        }
+        pixels
     }
 
     /// Greedy-decode a batch of crops. Returns (latex, mean token probability).
@@ -242,24 +320,17 @@ impl FormulaRecognizer {
         if images.is_empty() {
             return Ok(vec![]);
         }
-        const SIZE: u32 = 384;
-        let plane = (SIZE * SIZE * 3) as usize;
-        let mut pixels = Vec::with_capacity(plane * images.len());
-        for img in images {
-            let mut img = img.clone();
-            super::imageops::normalize_polarity(&mut img);
-            let resized = resize(&img, SIZE, SIZE, FilterType::CatmullRom);
-            pixels.extend(to_chw(&resized, 1.0 / 255.0, [0.5; 3], [0.5; 3], false));
-        }
+        const SIZE: i64 = 384;
+        let meta = self.meta()?;
         let batch = images.len();
-        let input = Tensor::from_array((vec![batch as i64, 3, SIZE as i64, SIZE as i64], pixels))?;
+        let input = Tensor::from_array((vec![batch as i64, 3, SIZE, SIZE], self.pixels(images)))?;
         let (hidden_shape, hidden) = self
             .encoder
             .run(|enc| f32_output(&enc.run(ort::inputs![&input])?))?;
         drop(input);
         let (seq, dim) = (hidden_shape[1] as usize, hidden_shape[2] as usize);
         let per_row = seq * dim;
-        let (start_id, eos) = self.generation_ids();
+        let start_id = meta.start_id;
 
         let mut active: Vec<usize> = (0..batch).collect();
         let mut active_hidden = hidden;
@@ -290,7 +361,7 @@ impl FormulaRecognizer {
             for (a, (&row, row_logits)) in active.iter().zip(logits.chunks_exact(vocab)).enumerate()
             {
                 let (tok, prob) = argmax_softmax(row_logits);
-                if Some(tok as i64) == eos {
+                if meta.stop.contains(&(tok as i64)) {
                     continue;
                 }
                 ids[row].push(tok as i64);
@@ -320,7 +391,7 @@ impl FormulaRecognizer {
                 active.truncate(keep.len());
             }
         }
-        let tok = self.tokenizer()?;
+        let tok = &meta.tokenizer;
         Ok((0..batch)
             .map(|row| {
                 let text = tok
@@ -339,6 +410,31 @@ impl FormulaRecognizer {
             })
             .collect())
     }
+}
+
+/// Decoder start and end-of-sequence ids from a Hugging Face model directory.
+fn generation_ids(dir: &Path) -> (i64, Option<i64>) {
+    let read = |name: &str| -> Option<serde_json::Value> {
+        serde_json::from_str(
+            std::fs::read_to_string(dir.join(name))
+                .ok()?
+                .trim_start_matches('\u{feff}'),
+        )
+        .ok()
+    };
+    let (mut start, mut eos) = (None, None);
+    for v in [read("generation_config.json"), read("config.json")]
+        .into_iter()
+        .flatten()
+    {
+        start = start
+            .or(v["decoder_start_token_id"].as_i64())
+            .or(v["decoder"]["decoder_start_token_id"].as_i64());
+        eos = eos
+            .or(v["eos_token_id"].as_i64())
+            .or(v["decoder"]["eos_token_id"].as_i64());
+    }
+    (start.unwrap_or(2), eos.or(Some(2)))
 }
 
 fn argmax_softmax(logits: &[f32]) -> (usize, f64) {

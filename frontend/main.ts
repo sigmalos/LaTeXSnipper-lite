@@ -1,4 +1,14 @@
-import { api, type ModelInfo, type ModelsState, type Recognition, type Settings, type Snapshot, type UpdateView } from "./lib/api";
+import {
+  api,
+  type LocalModels,
+  type ModelInfo,
+  type ModelsState,
+  type Recognition,
+  type Settings,
+  type Slot,
+  type Snapshot,
+  type UpdateView,
+} from "./lib/api";
 import {
   COPY_FORMATS,
   EXPORT_FORMATS,
@@ -32,15 +42,19 @@ const DEFAULT_HOTKEY = "CommandOrControl+F";
 const INSTALLED_BYTES: Record<string, number> = {
   "mathcraft-formula-det-int8": 25255507,
   "mathcraft-formula-rec-int8": 33148939,
+  "texo-formula-rec-q8": 22739744,
   "mathcraft-text-det": 4826518,
   "mathcraft-text-rec": 16654768,
 };
-/** Models a recognition type loads (mirrors Mode::required_models with the Int8 builds). */
-function requiredModels(mode: Mode): string[] {
-  const text = ["mathcraft-text-det", "mathcraft-text-rec"];
-  if (mode === "formula") return ["mathcraft-formula-rec-int8"];
-  if (mode === "text") return text;
-  return ["mathcraft-formula-det-int8", "mathcraft-formula-rec-int8", ...text];
+/** The parts each recognition type runs (mirrors Mode::required_models). */
+const MODE_SLOTS: Record<Mode, Slot[]> = {
+  formula: ["formula_rec"],
+  mixed: ["formula_det", "formula_rec", "text_det", "text_rec"],
+  text: ["text_det", "text_rec"],
+};
+/** Models a recognition type loads with the models chosen in Settings. */
+function requiredModels(mode: Mode, choice: LocalModels = snap.settings.local_models): string[] {
+  return MODE_SLOTS[mode].map((slot) => choice[slot]);
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -80,7 +94,7 @@ function modeLabel(mode: Mode): string {
 
 function renderStatus(): void {
   const s = snap.settings;
-  const model = s.backend === "external" ? `${t("外部模型")} ${s.external_model}` : `MathCraft ${modeLabel(s.mode)}`;
+  const model = s.backend === "external" ? `${t("在线模型")} ${s.external_model}` : `${localModelName(s)} ${modeLabel(s.mode)}`;
   const ready = s.backend === "external" || snap.models[s.mode];
   const fetching = s.backend === "builtin" && (snap.model_files ?? []).some((m) => m.downloading);
   const [cls, state] = busy
@@ -426,9 +440,12 @@ $<HTMLDialogElement>("result-dialog").addEventListener("close", async () => {
 let downloadMode: Mode = "formula";
 function openModels(mode: Mode): void {
   downloadMode = mode;
-  $("models-text").textContent = t("{mode}识别需要下载 MathCraft 模型（约 {size}），只需下载一次。", {
+  // Only what is still missing: a download that adds Texo should not count the rest.
+  const missing = requiredModels(mode).filter((id) => !snap.model_files?.find((m) => m.id === id)?.installed);
+  const ids = missing.length ? missing : requiredModels(mode);
+  $("models-text").textContent = t("{mode}识别需要下载所选模型（约 {size}），只需下载一次。", {
     mode: modeLabel(mode),
-    size: formatBytes(requiredModels(mode).reduce((sum, id) => sum + INSTALLED_BYTES[id], 0)),
+    size: formatBytes(ids.reduce((sum, id) => sum + (INSTALLED_BYTES[id] ?? 0), 0)),
   });
   $("models-status").textContent = "";
   $("models-progress").hidden = true;
@@ -447,7 +464,7 @@ $("models-start").addEventListener("click", async () => {
       bar.max = p.total;
       bar.value = p.downloaded;
     }
-    $("models-status").textContent = `${t("正在下载 {model}", { model: p.model })} · ${(p.downloaded / 1048576).toFixed(0)} MB`;
+    $("models-status").textContent = `${t("正在下载 {model}", { model: modelName(p.model) })} · ${(p.downloaded / 1048576).toFixed(0)} MB`;
   });
   try {
     applyModels(await api.downloadModels(downloadMode));
@@ -643,13 +660,28 @@ modeList.addEventListener("click", (e) => e.stopPropagation());
 
 // ------------------------------------------------------------------ model files
 
-const MODEL_NAMES: [string, string][] = [
-  ["mathcraft-formula-det-int8", "公式检测"],
-  ["mathcraft-formula-rec-int8", "公式识别"],
-  ["mathcraft-text-det", "文字检测"],
-  ["mathcraft-text-rec", "文字识别"],
+const SLOTS: [Slot, string][] = [
+  ["formula_det", "公式检测"],
+  ["formula_rec", "公式识别"],
+  ["text_det", "文字检测"],
+  ["text_rec", "文字识别"],
 ];
-const modelName = (id: string) => t(MODEL_NAMES.find(([key]) => key === id)?.[1] ?? id);
+const slotLabel = (slot: Slot) => t(SLOTS.find(([key]) => key === slot)?.[1] ?? slot);
+const modelInfo = (id: string) => snap.model_files?.find((m) => m.id === id);
+/** "Texo 公式识别": the model and its part, for toasts and prompts. */
+function modelName(id: string): string {
+  const m = modelInfo(id);
+  return m ? `${m.name} ${slotLabel(m.slot)}` : id;
+}
+/** The local model the status line names: the recognizer the current type runs. */
+function localModelName(s: Settings): string {
+  const slot: Slot = s.mode === "text" ? "text_rec" : "formula_rec";
+  return modelInfo(s.local_models[slot])?.name ?? "MathCraft";
+}
+
+/** The choices in the open Settings sheet; saved with the other settings. */
+let choice: LocalModels | null = null;
+const chosen = (): LocalModels => choice ?? snap.settings.local_models;
 
 type RowState = { downloading: boolean; deleting: boolean; done: number; total: number; failed: string | null };
 const rowStates = new Map<string, RowState>();
@@ -702,24 +734,50 @@ function renderModelRow(li: HTMLLIElement, m: ModelInfo): void {
   else bar.value = pct;
 }
 
+function optionLabel(m: ModelInfo): string {
+  return `${m.name}${m.installed ? "" : t("（未下载）")}`;
+}
+
 function renderModelList(): void {
   const list = $("model-list");
   const models = snap.model_files ?? [];
+  const picked = SLOTS.map(([slot]) => models.find((m) => m.id === chosen()[slot])).filter((m): m is ModelInfo => !!m);
   $("models-count").textContent = t("已下载 {n}/{total}", {
-    n: models.filter((m) => m.installed).length,
-    total: models.length,
+    n: picked.filter((m) => m.installed).length,
+    total: picked.length,
   });
   list.replaceChildren(
-    ...models.map((m) => {
+    ...picked.map((m) => {
+      const slot = m.slot;
       const li = document.createElement("li");
+      li.dataset.slot = slot;
       li.dataset.model = m.id;
       li.title = m.id;
       const uses = m.used_by.map(modeLabel).join(getLang() === "zh" ? "、" : ", ");
-      li.innerHTML = `<div><div class="model-title"><span class="model-name"></span></div><span class="model-use"></span></div>
+      li.innerHTML = `<div><div class="model-title"><span class="model-name"></span><select class="model-select"></select></div><span class="model-use"></span></div>
         <span class="model-size"></span><span class="model-state" aria-live="polite"></span>
         <div class="model-actions"><button type="button" class="model-download"></button><button type="button" class="model-delete btn quiet small danger"></button></div>
         <progress max="100"></progress>`;
-      li.querySelector(".model-name")!.textContent = modelName(m.id);
+      li.querySelector(".model-name")!.textContent = slotLabel(slot);
+      const select = li.querySelector<HTMLSelectElement>(".model-select")!;
+      select.setAttribute("aria-label", t("{part}模型", { part: slotLabel(slot) }));
+      select.replaceChildren(
+        ...models
+          .filter((o) => o.slot === slot)
+          .map((o) => {
+            const opt = document.createElement("option");
+            opt.value = o.id;
+            opt.textContent = optionLabel(o);
+            opt.selected = o.id === m.id;
+            return opt;
+          }),
+      );
+      // Choosing a model only marks it; Save makes it the one recognition uses.
+      select.addEventListener("change", () => {
+        choice = { ...chosen(), [slot]: select.value };
+        renderModelList();
+        $("model-list").querySelector<HTMLSelectElement>(`li[data-slot="${slot}"] .model-select`)?.focus();
+      });
       li.querySelector(".model-use")!.textContent = t("用于：{modes}", { modes: uses });
       li.querySelector(".model-size")!.textContent = formatBytes(m.download_bytes);
       li.querySelector(".model-download")!.addEventListener("click", () => downloadOne(m.id));
@@ -731,9 +789,12 @@ function renderModelList(): void {
 }
 
 function refreshModelRow(id: string): void {
-  const m = snap.model_files?.find((x) => x.id === id);
+  const m = modelInfo(id);
   const li = $("model-list").querySelector<HTMLLIElement>(`li[data-model="${id}"]`);
   if (m && li) renderModelRow(li, m);
+  // The dropdown's "（未下载）" mark follows the install state.
+  const opt = $("model-list").querySelector<HTMLOptionElement>(`option[value="${id}"]`);
+  if (m && opt) opt.textContent = optionLabel(m);
 }
 
 async function downloadOne(id: string): Promise<void> {
@@ -801,6 +862,7 @@ function readSettingsForm(): Settings {
     ...snap.settings,
     mode: snap.settings.mode, // chosen in the main window's 识别类型 dropdown
     backend: fd.get("backend") as Settings["backend"],
+    local_models: { ...chosen() },
     theme: fd.get("theme") as Settings["theme"],
     language: fd.get("language") as Settings["language"],
     pdf_dpi: Number(fd.get("pdf_dpi")) || 200,
@@ -889,6 +951,7 @@ function openSettings(): void {
   $<HTMLInputElement>("data-dir").value = snap.data_dir;
   $("version").textContent = `LaTeXSnipper ${snap.version}`;
   $("test-result").textContent = "";
+  choice = { ...s.local_models };
   renderModelList();
   // Pick up files added or removed outside the app since the last look.
   api.listModels().then(applyModels).catch(() => undefined);
@@ -917,14 +980,18 @@ $("test-external").addEventListener("click", async () => {
 });
 
 $<HTMLDialogElement>("settings-dialog").addEventListener("close", async () => {
+  const next = readSettingsForm();
+  choice = null; // the sheet's model choices end with it
   if ($<HTMLDialogElement>("settings-dialog").returnValue !== "save") {
     applyTheme(snap.settings.theme);
     return;
   }
   try {
-    snap.settings = await api.saveSettings(readSettingsForm());
+    snap.settings = await api.saveSettings(next);
     applyTheme(snap.settings.theme);
     applyLanguage();
+    // Readiness depends on the chosen models.
+    applyModels(await api.listModels());
     toast(t("设置已保存"));
   } catch (e) {
     applyTheme(snap.settings.theme);

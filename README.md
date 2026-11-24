@@ -102,7 +102,7 @@ Debian 包依赖 `libwebkit2gtk-4.1-0`、`libgtk-3-0`、`libayatana-appindicator
 
 ## 识别模型
 
-内置 MathCraft 使用以下四个模型，每个文件都会校验 SHA-256。公式检测和公式识别都是 Int8 量化版本，体积小、在 CPU 上更快：
+本地模型默认使用以下四个 MathCraft 模型，每个文件都会校验 SHA-256。公式检测和公式识别都是 Int8 量化版本，体积小、在 CPU 上更快：
 
 | 模型 | 用于 | 下载大小 | 来源 |
 |---|---|---|---|
@@ -111,7 +111,9 @@ Debian 包依赖 `libwebkit2gtk-4.1-0`、`libgtk-3-0`、`libayatana-appindicator
 | 文字检测 | 混合、纯文字 | 4.3 MB | [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) |
 | 文字识别 | 混合、纯文字 | 13 MB | [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) |
 
-第一次打开应用时会自动下载这四个模型；之后在「设置 → 识别后端 → 内置 MathCraft」中可以查看每个模型是否已下载，单独下载、重新下载或删除。删除的模型不会再被自动下载，需要时会在识别前提示。
+第一次打开应用时会自动下载这四个模型。「设置 → 识别后端 → 本地模型」中，公式检测、公式识别、文字检测、文字识别各有一个下拉列表：选中一个模型后可以下载、重新下载或删除它，点「保存」后识别就改用它。删除的模型不会再被自动下载，需要时会在识别前提示。
+
+公式识别还可以选用 **Texo**（[Texo](https://github.com/alephpi/Texo) 蒸馏的 PP-FormulaNet-S，Q8_0 量化的 GGUF 文件，22 MB，来自 [cstr/texo-distill-gguf](https://huggingface.co/cstr/texo-distill-gguf)，经 hf-mirror 下载）。它不会在第一次启动时自动下载，选中后点「下载」即可。应用读取 GGUF 文件，把权重组装成 ONNX 计算图交给 ONNX Runtime 运行，和其他模型一样优先使用 GPU。Texo 的输出风格和 MathCraft 略有不同，比如会多一层花括号分组，用 `\infin` 表示无穷。Texo 的权重以 AGPL-3.0 协议发布。
 
 1.4.0 及更早的版本使用标准（FP32）的公式检测和公式识别模型，下载大小分别为 64 MB 和 104 MB。升级后它们不再使用，也不会显示在设置中；它们所在的 `mathcraft-formula-det`、`mathcraft-formula-rec` 文件夹可以手动删除。macOS 上原版 LaTeXSnipper 和 Word / PowerPoint 插件仍使用 `mathcraft-formula-rec`，与原版共用数据目录时请保留它。
 
@@ -240,7 +242,7 @@ scripts/              安装包冒烟测试、签名证书导入、更新清单�
 ## 致谢与许可
 
 - 原项目：[SakuraMathcraft/LaTeXSnipper](https://github.com/SakuraMathcraft/LaTeXSnipper)，本项目的界面设计、识别流程和数据格式均来自原版
-- 识别模型：[SakuraMathcraft/MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models)
+- 识别模型：[SakuraMathcraft/MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models)；可选的 Texo 公式识别模型：[alephpi/Texo](https://github.com/alephpi/Texo)（AGPL-3.0），GGUF 转换：[CrispEmbed](https://github.com/CrispStrobe/CrispEmbed)
 - 公式渲染：[MathJax](https://www.mathjax.org/)；PDF 渲染：[pdf.js](https://mozilla.github.io/pdf.js/)
 
 与原版一致，本项目以 [GPL-3.0](LICENSE) 协议发布。

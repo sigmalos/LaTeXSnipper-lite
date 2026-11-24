@@ -59,5 +59,5 @@ test("PDF recognition uses the four Int8 models, ignoring FP32 files on disk", a
   await page.keyboard.press("Escape");
   await page.click("#settings-btn");
   await page.locator('.model-row[data-model="mathcraft-formula-det-int8"] .model-delete').click();
-  await expect(page.locator("#ask-text")).toHaveText("删除“公式检测”模型？混合识别将无法使用，需要时可重新下载（20 MB）。");
+  await expect(page.locator("#ask-text")).toHaveText("删除“MathCraft 公式检测”模型？混合识别将无法使用，需要时可重新下载（20 MB）。");
 });

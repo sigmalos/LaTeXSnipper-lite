@@ -85,6 +85,20 @@ impl Tokenizer {
         })
     }
 
+    /// A decoder over a plain id-ordered token list (e.g. a GGUF vocabulary).
+    pub fn from_tokens(
+        tokens: Vec<String>,
+        special: impl IntoIterator<Item = u32>,
+        clean_up_spaces: bool,
+    ) -> Self {
+        Self {
+            id_to_token: (0u32..).zip(tokens).collect(),
+            special: special.into_iter().collect(),
+            byte_decoder: byte_decoder(),
+            clean_up_spaces,
+        }
+    }
+
     pub fn token_id(&self, content: &str) -> Option<u32> {
         self.id_to_token
             .iter()
@@ -161,6 +175,15 @@ mod tests {
         let t = sample();
         assert_eq!(t.decode(&[7, 9]), "a,");
         assert_eq!(t.decode(&[10]), "é");
+    }
+
+    #[test]
+    fn decodes_a_plain_token_list() {
+        let tokens = ["<s>", "</s>", "\\frac", "Ġ{", "x", "Ġ!"]
+            .map(String::from)
+            .to_vec();
+        let t = Tokenizer::from_tokens(tokens, [0, 1], true);
+        assert_eq!(t.decode(&[0, 2, 3, 4, 5, 1]), "\\frac {x!");
     }
 
     #[test]

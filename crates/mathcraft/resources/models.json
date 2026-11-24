@@ -109,6 +109,20 @@
         "https://gitee.com/sigmalyj/mathcraft-lite/releases/download/v1.0.0/mathcraft-formula-rec-int8.zip"
       ]
     },
+    "texo-formula-rec-q8": {
+      "version": "1",
+      "runtime": "gguf",
+      "packaging": "file",
+      "files": [
+        {
+          "path": "texo-distill-q8_0.gguf",
+          "sha256": "546cd4acad17f316566649968f50778c0aef8f8646714892cca606e49fe283f9"
+        }
+      ],
+      "sources": [
+        "https://hf-mirror.com/cstr/texo-distill-gguf/resolve/main/texo-distill-q8_0.gguf?download=true"
+      ]
+    },
     "mathcraft-text-det": {
       "version": "1",
       "runtime": "onnx",

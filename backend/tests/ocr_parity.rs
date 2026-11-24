@@ -7,7 +7,7 @@
 //! test is skipped (with a notice) when its models are not installed.
 
 use latexsnipper_lib::commands::{model_status, Core, BUILDS};
-use latexsnipper_lib::ocr::{imageops, Engine, FormulaBuilds, FormulaModel, Mode};
+use latexsnipper_lib::ocr::{imageops, Engine, FormulaBuilds, FormulaModel, FormulaRec, Mode};
 use std::path::{Path, PathBuf};
 
 fn fixtures() -> PathBuf {
@@ -130,7 +130,7 @@ fn int8_detector_matches_python_reference_in_mixed_mode() {
     let models = models_dir();
     let builds = FormulaBuilds {
         det: FormulaModel::Int8,
-        rec: FormulaModel::Standard,
+        rec: FormulaRec::Standard,
     };
     if !model_status(&models, builds)["mixed"] {
         eprintln!(
@@ -278,4 +278,61 @@ fn core_with_each_model_staged(source: &Path) -> (tempfile::TempDir, Core) {
     }
     let core = Core::new(dir.path());
     (dir, core)
+}
+
+/// Texo, the GGUF formula recognizer, reads the formula fixtures when chosen
+/// in Settings (its own LaTeX style: extra groups, `\infin`).
+#[test]
+fn texo_recognizes_the_formula_fixtures() {
+    let models = models_dir();
+    let texo = FormulaBuilds {
+        det: FormulaModel::Int8,
+        rec: FormulaRec::Texo,
+    };
+    if !model_status(&models, texo).values().all(|v| *v) {
+        eprintln!(
+            "SKIP: Texo or mixed-mode models not found under {}",
+            models.display()
+        );
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(dir.path().join("MathCraft")).unwrap();
+    stage_models(&models, &dir.path().join("MathCraft/models")).unwrap();
+    let core = Core::new(dir.path());
+    let mut settings = core.settings();
+    settings.local_models.formula_rec = "texo-formula-rec-q8".into();
+    core.store.lock().unwrap().save_settings(settings).unwrap();
+    assert_eq!(core.engine().builds(), texo);
+    let read = |name: &str, mode| {
+        let bytes = std::fs::read(fixtures().join(format!("{name}.png"))).unwrap();
+        core.recognize_bytes(&bytes, Some(mode))
+            .unwrap()
+            .recognition
+    };
+    let frac = read("frac", Mode::Formula);
+    assert!(
+        frac.text.contains("\\frac { a + b } { c ^ { 2 } }"),
+        "{}",
+        frac.text
+    );
+    let sum = read("sum", Mode::Formula);
+    assert!(
+        sum.text.starts_with("\\sum _ { n = 0 } ^ { \\infin }"),
+        "{}",
+        sum.text
+    );
+    let multiline = read("multiline", Mode::Formula);
+    assert!(
+        multiline
+            .text
+            .starts_with("\\begin{aligned}\nf ( x ) &= x ^ { 2 }"),
+        "{}",
+        multiline.text
+    );
+    for r in [&frac, &sum, &multiline] {
+        assert!(r.score > 0.9, "score {}", r.score);
+    }
+    let mixed = read("mixed", Mode::Mixed);
+    assert_eq!(mixed.text, reference()["mixed"]["text"].as_str().unwrap());
 }

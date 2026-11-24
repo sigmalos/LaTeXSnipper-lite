@@ -2,6 +2,8 @@
 //!
 //! Models are not bundled in the DMG (≈210 MB); they are fetched once per
 //! model on first use, SHA-256 verified, and shared with the legacy app.
+//! Most models are zip archives; a single-file model (a GGUF) is downloaded
+//! as is.
 
 use anyhow::{anyhow, bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -14,11 +16,12 @@ const MANIFEST: &str = include_str!("../resources/models.json");
 
 /// Every model the app knows, in display order, with its archive size
 /// (Content-Length of the v1.0.0 release asset) for the download button.
-pub const CATALOG: [(&str, u64); 6] = [
+pub const CATALOG: [(&str, u64); 7] = [
     ("mathcraft-formula-det", 67_531_517),
     ("mathcraft-formula-det-int8", 20_537_681),
     ("mathcraft-formula-rec", 108_795_631),
     ("mathcraft-formula-rec-int8", 24_695_733),
+    ("texo-formula-rec-q8", 22_739_744),
     ("mathcraft-text-det", 4_533_780),
     ("mathcraft-text-rec", 14_102_746),
 ];
@@ -32,6 +35,19 @@ struct Manifest {
 pub struct ModelSpec {
     pub files: Vec<FileSpec>,
     pub sources: Vec<String>,
+    #[serde(default)]
+    pub packaging: Packaging,
+}
+
+/// How a model's download is packed.
+#[derive(Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Packaging {
+    /// A zip archive holding every file.
+    #[default]
+    Zip,
+    /// The model's only file, downloaded as is.
+    File,
 }
 
 #[derive(Deserialize, Clone)]
@@ -110,6 +126,25 @@ pub fn install_archive(root: &Path, model: &str, archive: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Install a downloaded single-file model into `root/model` after verifying it.
+pub fn install_file(root: &Path, model: &str, download: &Path) -> Result<()> {
+    let spec = spec(model)?;
+    let [file] = spec.files.as_slice() else {
+        bail!("{model} is not a single-file model");
+    };
+    if sha256_file(download)? != file.sha256 {
+        bail!("checksum mismatch for {model}/{}", file.path);
+    }
+    let staging = root.join(format!(".{model}.staging"));
+    let _ = std::fs::remove_dir_all(&staging);
+    std::fs::create_dir_all(&staging)?;
+    std::fs::rename(download, staging.join(&file.path))?;
+    let final_dir = root.join(model);
+    let _ = std::fs::remove_dir_all(&final_dir);
+    std::fs::rename(&staging, &final_dir)?;
+    Ok(())
+}
+
 /// Delete an installed model and any leftover partial download.
 /// A symlinked model directory is unlinked; its target is never touched.
 pub fn remove(root: &Path, model: &str) -> Result<()> {
@@ -134,7 +169,10 @@ pub fn download(root: &Path, model: &str, on_progress: &mut dyn FnMut(Progress))
     for url in &spec.sources {
         match fetch(url, &part, model, on_progress) {
             Ok(()) => {
-                let result = install_archive(root, model, &part);
+                let result = match spec.packaging {
+                    Packaging::Zip => install_archive(root, model, &part),
+                    Packaging::File => install_file(root, model, &part),
+                };
                 let _ = std::fs::remove_file(&part);
                 return result;
             }
@@ -203,6 +241,7 @@ mod tests {
             "mathcraft-formula-det-int8",
             "mathcraft-formula-rec",
             "mathcraft-formula-rec-int8",
+            "texo-formula-rec-q8",
             "mathcraft-text-det",
             "mathcraft-text-rec",
         ] {
@@ -218,6 +257,32 @@ mod tests {
             assert!(spec(id).is_ok(), "{id} missing from manifest");
             assert!(bytes > 1_000_000);
         }
+    }
+
+    #[test]
+    fn texo_is_a_single_gguf_file() {
+        let s = spec("texo-formula-rec-q8").unwrap();
+        assert_eq!(s.packaging, Packaging::File);
+        assert_eq!(s.files.len(), 1);
+        assert!(s.files[0].path.ends_with(".gguf"));
+        assert_eq!(
+            spec("mathcraft-text-det").unwrap().packaging,
+            Packaging::Zip
+        );
+    }
+
+    #[test]
+    fn single_files_are_verified_before_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let part = dir.path().join(".texo-formula-rec-q8.zip.part");
+        std::fs::write(&part, b"not the model").unwrap();
+        let err = install_file(dir.path(), "texo-formula-rec-q8", &part).unwrap_err();
+        assert!(err.to_string().contains("checksum"), "{err}");
+        assert!(!is_installed(dir.path(), "texo-formula-rec-q8"));
+        assert!(
+            install_file(dir.path(), "mathcraft-text-rec", &part).is_err(),
+            "two files"
+        );
     }
 
     #[test]

@@ -6,18 +6,35 @@
   const listeners = new Map(); // event -> [callbackId]
   let nextId = 1;
 
-  // The four built-in models (BUILTIN_MODELS), all Int8 for the formula models.
-  const ALL_MODELS = ["mathcraft-formula-det-int8", "mathcraft-formula-rec-int8", "mathcraft-text-det", "mathcraft-text-rec"];
-  // Models each recognition type loads (Mode::required_models with the Int8 builds).
-  const required = () => ({
-    formula: ["mathcraft-formula-rec-int8"],
-    mixed: ["mathcraft-formula-det-int8", "mathcraft-formula-rec-int8", "mathcraft-text-det", "mathcraft-text-rec"],
-    text: ["mathcraft-text-det", "mathcraft-text-rec"],
-  });
-  const usesModel = (mode, id) => required()[mode].includes(id);
+  // Every model Settings offers (MODEL_OPTIONS), by part; the first of each part is its default.
+  const OPTIONS = [
+    { id: "mathcraft-formula-det-int8", slot: "formula_det", name: "MathCraft" },
+    { id: "mathcraft-formula-rec-int8", slot: "formula_rec", name: "MathCraft" },
+    { id: "texo-formula-rec-q8", slot: "formula_rec", name: "Texo" },
+    { id: "mathcraft-text-det", slot: "text_det", name: "MathCraft" },
+    { id: "mathcraft-text-rec", slot: "text_rec", name: "MathCraft" },
+  ];
+  const ALL_MODELS = OPTIONS.map((o) => o.id);
+  const DEFAULT_CHOICE = {
+    formula_det: "mathcraft-formula-det-int8",
+    formula_rec: "mathcraft-formula-rec-int8",
+    text_det: "mathcraft-text-det",
+    text_rec: "mathcraft-text-rec",
+  };
+  // The parts each recognition type runs (Mode::required_models).
+  const MODE_SLOTS = {
+    formula: ["formula_rec"],
+    mixed: ["formula_det", "formula_rec", "text_det", "text_rec"],
+    text: ["text_det", "text_rec"],
+  };
+  const USED_BY = { formula_det: ["mixed"], formula_rec: ["formula", "mixed"], text_det: ["mixed", "text"], text_rec: ["mixed", "text"] };
+  // Models each recognition type loads with the chosen models.
+  const required = (choice = state?.settings.local_models ?? DEFAULT_CHOICE) =>
+    Object.fromEntries(Object.entries(MODE_SLOTS).map(([m, slots]) => [m, slots.map((slot) => choice[slot])]));
   const SIZES = {
     "mathcraft-formula-det-int8": 20537681,
     "mathcraft-formula-rec-int8": 24695733,
+    "texo-formula-rec-q8": 22739744,
     "mathcraft-text-det": 4533780,
     "mathcraft-text-rec": 14102746,
   };
@@ -37,6 +54,7 @@
       external_timeout_sec: 60,
       external_custom_prompt: "",
       onboarding_done: true,
+      local_models: { ...DEFAULT_CHOICE },
       ...(seed.settings || {}),
     },
     history: seed.history || [],
@@ -44,7 +62,9 @@
     // Seeds may describe ready recognition types ({formula: true, ...}); derive the files.
     installed: new Set(
       seed.installedModels ??
-        (seed.models ? ALL_MODELS.filter((id) => Object.entries(seed.models).some(([m, on]) => on && required()[m].includes(id))) : ALL_MODELS),
+        (seed.models
+          ? ALL_MODELS.filter((id) => Object.entries(seed.models).some(([m, on]) => on && required(DEFAULT_CHOICE)[m].includes(id)))
+          : ALL_MODELS),
     ),
     downloading: new Set(),
     // ids whose next download fails once (or every download when downloadFails is true)
@@ -77,12 +97,14 @@
   }
   function modelsState() {
     return {
-      models: ALL_MODELS.map((id) => ({
+      models: OPTIONS.map(({ id, slot, name }) => ({
         id,
+        slot,
+        name,
         installed: state.installed.has(id),
         downloading: state.downloading.has(id),
         download_bytes: SIZES[id],
-        used_by: Object.keys(required()).filter((m) => usesModel(m, id)),
+        used_by: USED_BY[slot],
       })),
       modes: modes(),
     };
@@ -186,6 +208,8 @@
     },
     save_settings: ({ settings }) => {
       if (settings.hotkey === "CommandOrControl+Alt+Q") throw "HOTKEY_INVALID:already registered";
+      for (const [slot, id] of Object.entries(settings.local_models ?? {}))
+        if (!OPTIONS.some((o) => o.slot === slot && o.id === id)) throw `unknown ${slot} model "${id}"`;
       state.settings = structuredClone(settings);
       return settings;
     },

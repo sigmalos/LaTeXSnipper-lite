@@ -20,7 +20,13 @@ export interface Settings {
   external_timeout_sec: number;
   external_custom_prompt: string;
   onboarding_done: boolean;
+  /** The model id chosen for each part of local recognition. */
+  local_models: LocalModels;
 }
+
+/** The four parts of local recognition (backend `Slot`). */
+export type Slot = "formula_det" | "formula_rec" | "text_det" | "text_rec";
+export type LocalModels = Record<Slot, string>;
 
 export interface Snapshot {
   version: string;
@@ -69,6 +75,10 @@ export interface ConfirmedResult {
 
 export interface ModelInfo {
   id: string;
+  /** The part this model can fill. */
+  slot: Slot;
+  /** Display name in that part's dropdown. */
+  name: string;
   installed: boolean;
   downloading: boolean;
   download_bytes: number;
