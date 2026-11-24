@@ -35,11 +35,11 @@ test("PDF pages are rendered, recognized in mixed mode and inserted", async ({ p
   await expect(page.locator("#preview p")).toHaveCount(4);
 });
 
-test("PDF recognition uses whichever formula detector is installed", async ({ page }) => {
-  // The standard detector is selected (the default), but only the Int8 one is on disk.
+test("PDF recognition uses the four Int8 models, ignoring FP32 files on disk", async ({ page }) => {
+  // FP32 models left by the original app do not count; the Int8 set is complete.
   await page.addInitScript(() => {
     (window as any).__MOCK_SEED__ = {
-      installedModels: ["mathcraft-formula-det-int8", "mathcraft-formula-rec", "mathcraft-text-det", "mathcraft-text-rec"],
+      installedModels: ["mathcraft-formula-det-int8", "mathcraft-formula-rec-int8", "mathcraft-text-det", "mathcraft-text-rec"],
       outcomes: [{ text: "Page one $a^2$" }],
     };
   });
@@ -55,9 +55,9 @@ test("PDF recognition uses whichever formula detector is installed", async ({ pa
   const cmds = await page.evaluate(() => (window as any).__mock.calls.map((c: any) => c.cmd));
   expect(cmds).not.toContain("download_models");
 
-  // In Settings, the Int8 detector is the one in use, so deleting it warns that mixed mode breaks.
+  // Deleting the formula detector warns that mixed mode breaks.
   await page.keyboard.press("Escape");
   await page.click("#settings-btn");
   await page.locator('.model-row[data-model="mathcraft-formula-det-int8"] .model-delete').click();
-  await expect(page.locator("#ask-text")).toHaveText("删除“公式检测(Int8)”模型？混合识别将无法使用，需要时可重新下载（20 MB）。");
+  await expect(page.locator("#ask-text")).toHaveText("删除“公式检测”模型？混合识别将无法使用，需要时可重新下载（20 MB）。");
 });

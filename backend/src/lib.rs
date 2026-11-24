@@ -102,9 +102,20 @@ pub fn run() {
             // The window starts hidden (tauri.conf.json) so headless runs never flash it.
             shell::show_main(app.handle());
             update::spawn_auto(app.handle().clone());
-            // Load the formula model off the UI thread so the first capture is fast.
+            // First launch downloads all four built-in models; then the formula
+            // model is loaded off the UI thread so the first capture is fast.
             let warm = core.clone();
+            let handle = app.handle().clone();
             std::thread::spawn(move || {
+                if warm.settings().backend == "builtin" {
+                    if let Err(e) = warm.prefetch_models(
+                        &mut |p| drop(handle.emit("model-progress", p)),
+                        &mut |state| drop(handle.emit("models-state", state)),
+                    ) {
+                        eprintln!("model download unfinished: {e:#}");
+                        let _ = handle.emit("models-state", warm.models_state());
+                    }
+                }
                 let engine = warm.engine();
                 if commands::model_status(engine.root(), engine.builds()).get("formula")
                     == Some(&true)

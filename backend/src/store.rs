@@ -4,7 +4,7 @@
 //! Qt app so existing user data under `~/Library/Application Support/LaTeXSnipper`
 //! loads without migration.
 
-use crate::ocr::{FormulaBuilds, FormulaModel, Mode};
+use crate::ocr::Mode;
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
@@ -16,10 +16,6 @@ pub struct Settings {
     pub mode: Mode,
     /// "builtin" (MathCraft ONNX) or "external" (OpenAI-compatible endpoint)
     pub backend: String,
-    /// Built-in formula recognizer: "standard" (FP32) or "int8".
-    pub formula_model: FormulaModel,
-    /// Built-in formula detector (mixed mode): "standard" (FP32) or "int8".
-    pub det_model: FormulaModel,
     /// "auto" | "light" | "dark"
     pub theme: String,
     /// "zh" | "en"
@@ -62,8 +58,6 @@ impl Default for Settings {
         Self {
             mode: Mode::Formula,
             backend: "builtin".into(),
-            formula_model: FormulaModel::Standard,
-            det_model: FormulaModel::Standard,
             theme: "auto".into(),
             language: "zh".into(),
             hotkey: DEFAULT_HOTKEY.into(),
@@ -76,16 +70,6 @@ impl Default for Settings {
             external_custom_prompt: String::new(),
             onboarding_done: false,
             version: SETTINGS_VERSION,
-        }
-    }
-}
-
-impl Settings {
-    /// The formula detector and recognizer builds the built-in engine loads.
-    pub fn formula_builds(&self) -> FormulaBuilds {
-        FormulaBuilds {
-            det: self.det_model,
-            rec: self.formula_model,
         }
     }
 }

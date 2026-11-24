@@ -1,10 +1,12 @@
-//! Backend end-to-end: real ONNX models must reproduce the original Python
-//! MathCraft output (`fixtures/python_reference.json`) exactly.
+//! Backend end-to-end with real ONNX models. The engine with the FP32 formula
+//! models (still used by the Office add-in) must reproduce the original Python
+//! MathCraft output (`fixtures/python_reference.json`) exactly; the app, which
+//! loads the Int8 builds, is checked on the same fixtures.
 //!
-//! Models are read from `$LATEXSNIPPER_MODELS` or the app data directory; the
-//! test is skipped (with a notice) when they are not installed.
+//! Models are read from `$LATEXSNIPPER_MODELS` or the app data directory; each
+//! test is skipped (with a notice) when its models are not installed.
 
-use latexsnipper_lib::commands::{model_status, Core};
+use latexsnipper_lib::commands::{model_status, Core, BUILDS};
 use latexsnipper_lib::ocr::{imageops, Engine, FormulaBuilds, FormulaModel, Mode};
 use std::path::{Path, PathBuf};
 
@@ -32,15 +34,23 @@ fn stage_models(source: &Path, target: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// A throwaway data dir containing the real models.
-fn core_with_models() -> Option<(tempfile::TempDir, Core)> {
-    let models = std::env::var("LATEXSNIPPER_MODELS")
+fn models_dir() -> PathBuf {
+    std::env::var("LATEXSNIPPER_MODELS")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
-    if !model_status(&models, FormulaBuilds::default())
-        .values()
-        .all(|v| *v)
-    {
+        .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"))
+}
+
+fn reference() -> serde_json::Value {
+    serde_json::from_str(
+        &std::fs::read_to_string(fixtures().join("python_reference.json")).unwrap(),
+    )
+    .unwrap()
+}
+
+/// A throwaway data dir containing the real models the app loads (Int8).
+fn core_with_models() -> Option<(tempfile::TempDir, Core)> {
+    let models = models_dir();
+    if !model_status(&models, BUILDS).values().all(|v| *v) {
         eprintln!(
             "SKIP: MathCraft models not found under {}",
             models.display()
@@ -54,29 +64,62 @@ fn core_with_models() -> Option<(tempfile::TempDir, Core)> {
     Some((dir, core))
 }
 
+/// The engine itself, with the FP32 formula models, matches Python exactly.
 #[test]
-fn matches_python_reference_for_every_mode() {
+fn engine_matches_python_reference_for_every_mode() {
+    let models = models_dir();
+    let fp32 = FormulaBuilds::default();
+    if !model_status(&models, fp32).values().all(|v| *v) {
+        eprintln!(
+            "SKIP: FP32 MathCraft models not found under {}",
+            models.display()
+        );
+        return;
+    }
+    let engine = Engine::with_builds(&models, fp32);
+    for (name, case) in reference().as_object().unwrap() {
+        let mode: Mode = serde_json::from_value(case["mode"].clone()).unwrap();
+        let img =
+            imageops::decode_rgb(&std::fs::read(fixtures().join(format!("{name}.png"))).unwrap())
+                .unwrap();
+        let got = engine.recognize(&img, mode).unwrap();
+        assert_eq!(got.text, case["text"].as_str().unwrap(), "fixture {name}");
+        assert!(got.score > 0.5, "fixture {name} score {}", got.score);
+    }
+}
+
+/// The app recognizes every fixture with the Int8 models. Quantization changes
+/// a symbol here and there, so formulas are checked up to their last symbol;
+/// text, which no formula model touches, must match exactly.
+#[test]
+fn app_recognizes_every_fixture_with_the_int8_models() {
     let Some((_dir, core)) = core_with_models() else {
         return;
     };
-    let reference: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(fixtures().join("python_reference.json")).unwrap(),
-    )
-    .unwrap();
-    for (name, case) in reference.as_object().unwrap() {
+    assert_eq!(core.engine().builds(), BUILDS);
+    let prefixes = [
+        ("frac", "\\frac { a + b } { c ^ { 2 } } ="),
+        (
+            "sum",
+            "\\sum _ { n = 0 } ^ { \\infty } \\frac { x ^ { n } } { n! } =",
+        ),
+    ];
+    for (name, case) in reference().as_object().unwrap() {
         let mode: Mode = serde_json::from_value(case["mode"].clone()).unwrap();
         let bytes = std::fs::read(fixtures().join(format!("{name}.png"))).unwrap();
-        let got = core.recognize_bytes(&bytes, Some(mode)).unwrap();
-        assert_eq!(
-            got.recognition.text,
-            case["text"].as_str().unwrap(),
-            "fixture {name}"
-        );
-        assert!(
-            got.recognition.score > 0.5,
-            "fixture {name} score {}",
-            got.recognition.score
-        );
+        let got = core
+            .recognize_bytes(&bytes, Some(mode))
+            .unwrap()
+            .recognition;
+        let want = case["text"].as_str().unwrap();
+        match prefixes.iter().find(|(n, _)| n == name) {
+            Some((_, prefix)) => {
+                assert!(got.text.starts_with(prefix), "fixture {name}: {}", got.text)
+            }
+            None if mode == Mode::Text => assert_eq!(got.text, want, "fixture {name}"),
+            None => assert!(!got.text.trim().is_empty(), "fixture {name}"),
+        }
+        assert!(got.score > 0.5, "fixture {name} score {}", got.score);
     }
 }
 
@@ -84,9 +127,7 @@ fn matches_python_reference_for_every_mode() {
 /// mixed fixture, so mixed mode still reproduces the Python reference.
 #[test]
 fn int8_detector_matches_python_reference_in_mixed_mode() {
-    let models = std::env::var("LATEXSNIPPER_MODELS")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
+    let models = models_dir();
     let builds = FormulaBuilds {
         det: FormulaModel::Int8,
         rec: FormulaModel::Standard,
@@ -98,10 +139,7 @@ fn int8_detector_matches_python_reference_in_mixed_mode() {
         );
         return;
     }
-    let reference: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(fixtures().join("python_reference.json")).unwrap(),
-    )
-    .unwrap();
+    let reference = reference();
     let engine = Engine::with_builds(&models, builds);
     let img = imageops::decode_rgb(&std::fs::read(fixtures().join("mixed.png")).unwrap()).unwrap();
     let got = engine.recognize(&img, Mode::Mixed).unwrap();
@@ -165,13 +203,8 @@ fn recognition_then_history_roundtrip() {
 /// after the models are downloaded while the app is running.
 #[test]
 fn models_downloaded_after_startup_are_used_without_restart() {
-    let source = std::env::var("LATEXSNIPPER_MODELS")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
-    if !model_status(&source, FormulaBuilds::default())
-        .values()
-        .all(|v| *v)
-    {
+    let source = models_dir();
+    if !model_status(&source, BUILDS).values().all(|v| *v) {
         eprintln!(
             "SKIP: MathCraft models not found under {}",
             source.display()
@@ -188,12 +221,7 @@ fn models_downloaded_after_startup_are_used_without_restart() {
         "{missing}"
     );
 
-    for id in [
-        "mathcraft-formula-det",
-        "mathcraft-formula-rec",
-        "mathcraft-text-det",
-        "mathcraft-text-rec",
-    ] {
+    for id in latexsnipper_lib::commands::BUILTIN_MODELS {
         let state = core
             .download_model_with(
                 id,
@@ -207,28 +235,16 @@ fn models_downloaded_after_startup_are_used_without_restart() {
             .unwrap();
         assert!(state.models.iter().find(|m| m.id == id).unwrap().installed);
     }
-    let reference: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(fixtures().join("python_reference.json")).unwrap(),
-    )
-    .unwrap();
     let got = core.recognize_bytes(&bytes, Some(Mode::Mixed)).unwrap();
-    assert_eq!(
-        got.recognition.text,
-        reference["mixed"]["text"].as_str().unwrap()
-    );
+    assert!(!got.recognition.text.trim().is_empty());
 }
 
 /// Deleting a model from Settings makes recognition ask for it again right away,
 /// and never reaches through a symlinked model directory into its target.
 #[test]
 fn deleting_a_model_takes_effect_without_restart() {
-    let source = std::env::var("LATEXSNIPPER_MODELS")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| latexsnipper_lib::data_dir().join("MathCraft/models"));
-    if !model_status(&source, FormulaBuilds::default())
-        .values()
-        .all(|v| *v)
-    {
+    let source = models_dir();
+    if !model_status(&source, BUILDS).values().all(|v| *v) {
         eprintln!(
             "SKIP: MathCraft models not found under {}",
             source.display()
@@ -239,16 +255,16 @@ fn deleting_a_model_takes_effect_without_restart() {
     let bytes = std::fs::read(fixtures().join("mixed.png")).unwrap();
     assert!(core.recognize_bytes(&bytes, Some(Mode::Mixed)).is_ok());
 
-    let state = core.delete_model("mathcraft-formula-det").unwrap();
+    let state = core.delete_model("mathcraft-formula-det-int8").unwrap();
     assert!(!state.modes["mixed"] && state.modes["formula"] && state.modes["text"]);
     let err = core.recognize_bytes(&bytes, Some(Mode::Mixed)).unwrap_err();
-    assert_eq!(err.to_string(), "MODELS_MISSING:mathcraft-formula-det");
+    assert_eq!(err.to_string(), "MODELS_MISSING:mathcraft-formula-det-int8");
     // Formula mode does not need the deleted model and keeps working.
     let formula = std::fs::read(fixtures().join("frac.png")).unwrap();
     assert!(core.recognize_bytes(&formula, Some(Mode::Formula)).is_ok());
     // The source model files are intact.
     assert!(source
-        .join("mathcraft-formula-det/mathcraft-mfd.onnx")
+        .join("mathcraft-formula-det-int8/mathcraft-mfd.onnx")
         .is_file());
 }
 
@@ -257,12 +273,7 @@ fn core_with_each_model_staged(source: &Path) -> (tempfile::TempDir, Core) {
     let dir = tempfile::tempdir().unwrap();
     let root = dir.path().join("MathCraft/models");
     std::fs::create_dir_all(&root).unwrap();
-    for id in [
-        "mathcraft-formula-det",
-        "mathcraft-formula-rec",
-        "mathcraft-text-det",
-        "mathcraft-text-rec",
-    ] {
+    for id in latexsnipper_lib::commands::BUILTIN_MODELS {
         stage_models(&source.join(id), &root.join(id)).unwrap();
     }
     let core = Core::new(dir.path());

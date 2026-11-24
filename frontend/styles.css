@@ -728,7 +728,7 @@ dialog.sheet {
   box-shadow: var(--shadow-pop);
   overflow: auto;
 }
-/* Wide enough for the model list's name, 选用, size, state and action columns. */
+/* Wide enough for the model list's name, size, state and action columns. */
 #settings-dialog {
   width: min(680px, calc(100vw - 48px));
 }
@@ -895,16 +895,16 @@ input[type="radio"] {
 .model-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 76px 64px 104px auto;
+  grid-template-columns: minmax(0, 1fr) 64px 104px auto;
   align-items: center;
   gap: 10px;
   padding: 7px 0;
 }
-/* Where supported, all rows share one set of columns so 选用, sizes and states line up. */
+/* Where supported, all rows share one set of columns so sizes and states line up. */
 @supports (grid-template-columns: subgrid) {
   .model-list {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 76px 64px 104px auto;
+    grid-template-columns: minmax(0, 1fr) 64px 104px auto;
     column-gap: 10px;
   }
   .model-row {
@@ -924,129 +924,6 @@ input[type="radio"] {
   display: block;
   color: var(--muted);
   font-size: 11.5px;
-}
-/* The name may wrap; the "?" stays right after its last word. */
-.model-title .model-name {
-  display: inline;
-}
-
-/* 选用: the two formula recognizers share one radio group, drawn as small toggle buttons. */
-.model-pick label {
-  position: relative;
-  display: block;
-}
-.model-pick input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-.model-pick span {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 12px;
-  white-space: nowrap;
-}
-.model-pick span:hover {
-  border-color: color-mix(in srgb, var(--ink) 35%, var(--line));
-}
-.model-pick input:checked + span {
-  border-color: color-mix(in srgb, var(--ink) 45%, transparent);
-  background: var(--ink-wash);
-  color: var(--ink);
-  font-weight: 600;
-}
-.model-pick input:checked + span::before {
-  content: "✓";
-}
-.model-pick input:focus-visible + span {
-  outline: 2px solid var(--ink);
-  outline-offset: 1px;
-}
-
-/* The "?" beside 公式识别(Int8) and the explanation it shows on hover or focus. */
-.model-help {
-  position: relative;
-  display: inline-flex;
-  margin-left: 5px;
-  vertical-align: -2px;
-}
-.model-help button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: 50%;
-  background: var(--surface);
-  color: var(--muted);
-  font: 600 10.5px/1 var(--font);
-  cursor: help;
-}
-.model-help button:hover,
-.model-help button:focus-visible {
-  border-color: var(--ink);
-  color: var(--ink);
-  outline: none;
-}
-.model-tip {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: -12px;
-  z-index: 20;
-  width: 280px;
-  padding: 10px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  background: var(--paper);
-  box-shadow: var(--shadow-pop);
-  color: var(--text);
-  font-size: 12px;
-  line-height: 1.55;
-  opacity: 0;
-  visibility: hidden;
-  transform: translateY(-2px);
-  transition: opacity 0.12s ease, transform 0.12s ease, visibility 0.12s;
-  pointer-events: none;
-}
-.model-help:hover .model-tip,
-.model-help:focus-within .model-tip {
-  opacity: 1;
-  visibility: visible;
-  transform: none;
-}
-.model-tip p {
-  margin: 0;
-}
-.model-tip strong {
-  display: block;
-  margin-top: 8px;
-  font-size: 11.5px;
-}
-.model-tip strong.pro {
-  color: var(--ok);
-}
-.model-tip strong.con {
-  color: var(--warn);
-}
-.model-tip ul {
-  margin: 2px 0 0;
-  padding-left: 16px;
-}
-.model-tip .model-tip-advice {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
 }
 .model-size {
   color: var(--muted);

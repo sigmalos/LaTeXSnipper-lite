@@ -9,9 +9,6 @@ import type { Entry, Kind, Mode } from "./format";
 export interface Settings {
   mode: Mode;
   backend: "builtin" | "external";
-  formula_model: "standard" | "int8";
-  /** Formula detector build used by mixed mode. */
-  det_model: "standard" | "int8";
   theme: "auto" | "light" | "dark";
   language: "zh" | "en";
   hotkey: string;
@@ -125,6 +122,8 @@ export const api = {
   saveDialog: (defaultPath: string, ext: string, label: string) =>
     save({ defaultPath, filters: [{ name: label, extensions: [ext] }] }),
   onProgress: (cb: (p: Progress) => void): Promise<UnlistenFn> => listen<Progress>("model-progress", (e) => cb(e.payload)),
+  onModelsState: (cb: (s: ModelsState) => void): Promise<UnlistenFn> =>
+    listen<ModelsState>("models-state", (e) => cb(e.payload)),
   onHotkey: (cb: () => void): Promise<UnlistenFn> => listen("hotkey-capture", () => cb()),
   onResultReady: (cb: () => void): Promise<UnlistenFn> => listen("result-ready", () => cb()),
   onResultConfirmed: (cb: (r: ConfirmedResult) => void): Promise<UnlistenFn> =>

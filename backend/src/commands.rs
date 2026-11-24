@@ -3,7 +3,7 @@
 
 use crate::external;
 use crate::modelhub::{self, Progress};
-use crate::ocr::{imageops, Engine, FormulaBuilds, Mode, Recognition};
+use crate::ocr::{imageops, models, Engine, FormulaBuilds, FormulaModel, Mode, Recognition};
 use crate::store::{kind_for, Entry, Settings, Store};
 use anyhow::{anyhow, bail, Context, Result};
 use base64::Engine as _;
@@ -78,6 +78,14 @@ pub struct RecognizeResult {
     pub kind: &'static str,
 }
 
+/// Archive size of a model, for its download button.
+fn download_bytes(id: &str) -> u64 {
+    modelhub::CATALOG
+        .iter()
+        .find(|(known, _)| *known == id)
+        .map_or(0, |&(_, bytes)| bytes)
+}
+
 pub fn pandoc_path() -> Option<PathBuf> {
     let exe = if cfg!(windows) {
         "pandoc.exe"
@@ -113,21 +121,36 @@ pub fn model_status(root: &Path, builds: FormulaBuilds) -> BTreeMap<&'static str
     .collect()
 }
 
-/// The builds the engine actually loads for the `selected` ones. Either formula
-/// detector serves mixed mode: when the selected one is not installed but the
-/// other build is, the other build is used. The recognizer is always the selected one.
-pub fn effective_builds(root: &Path, selected: FormulaBuilds) -> FormulaBuilds {
-    let other = selected.det.other();
-    if !modelhub::is_installed(root, selected.det.det_id())
-        && modelhub::is_installed(root, other.det_id())
-    {
-        FormulaBuilds {
-            det: other,
-            ..selected
-        }
-    } else {
-        selected
-    }
+/// The formula builds the desktop app loads: the Int8 detector and recognizer.
+/// (The engine still loads the FP32 builds; the Office add-in uses them.)
+pub const BUILDS: FormulaBuilds = FormulaBuilds {
+    det: FormulaModel::Int8,
+    rec: FormulaModel::Int8,
+};
+
+/// The built-in models, in display order: everything the three recognition types load.
+pub const BUILTIN_MODELS: [&str; 4] = [
+    models::FORMULA_DET_INT8,
+    models::FORMULA_REC_INT8,
+    models::TEXT_DET,
+    models::TEXT_REC,
+];
+
+/// The order a first launch downloads them in: formula recognition (the
+/// default type) is ready first.
+const PREFETCH_ORDER: [&str; 4] = [
+    models::FORMULA_REC_INT8,
+    models::FORMULA_DET_INT8,
+    models::TEXT_DET,
+    models::TEXT_REC,
+];
+
+/// Written next to the app data once the first launch has fetched every model,
+/// so a model the user deletes later is not downloaded again behind their back.
+const PREFETCHED_MARKER: &str = ".lite-models-prefetched";
+
+fn is_builtin(id: &str) -> bool {
+    BUILTIN_MODELS.contains(&id)
 }
 
 impl Core {
@@ -144,26 +167,16 @@ impl Core {
         self.store.lock().unwrap_or_else(|p| p.into_inner())
     }
 
-    /// The models directory and the builds to load from it (see [`effective_builds`]).
-    fn root_and_builds(&self) -> (PathBuf, FormulaBuilds) {
-        let (root, selected) = {
-            let s = self.store();
-            (s.models_dir(), s.settings.formula_builds())
-        };
-        let builds = effective_builds(&root, selected);
-        (root, builds)
+    fn models_root(&self) -> PathBuf {
+        self.store().models_dir()
     }
 
-    /// The cached engine, rebuilt when the builds it should load changed (a
-    /// setting changed, or a formula detector was downloaded or deleted).
+    /// The cached engine (Int8 formula builds, see [`BUILDS`]).
     pub fn engine(&self) -> Arc<Engine> {
-        let (root, builds) = self.root_and_builds();
+        let root = self.models_root();
         let mut cached = self.engine.lock().unwrap_or_else(|p| p.into_inner());
-        if cached.as_ref().is_some_and(|e| e.builds() != builds) {
-            *cached = None;
-        }
         cached
-            .get_or_insert_with(|| Arc::new(Engine::with_builds(&root, builds)))
+            .get_or_insert_with(|| Arc::new(Engine::with_builds(&root, BUILDS)))
             .clone()
     }
 
@@ -174,28 +187,28 @@ impl Core {
     }
 
     pub fn models_state(&self) -> ModelsState {
-        let (root, builds) = self.root_and_builds();
+        let root = self.models_root();
         let downloading = self
             .downloading
             .lock()
             .unwrap_or_else(|p| p.into_inner())
             .clone();
-        let models = modelhub::CATALOG
+        let models = BUILTIN_MODELS
             .iter()
-            .map(|&(id, download_bytes)| ModelInfo {
+            .map(|&id| ModelInfo {
                 id,
                 installed: modelhub::is_installed(&root, id),
                 downloading: downloading.contains(id),
-                download_bytes,
+                download_bytes: download_bytes(id),
                 used_by: [Mode::Formula, Mode::Mixed, Mode::Text]
                     .into_iter()
-                    .filter(|m| m.uses_model(id))
+                    .filter(|m| m.required_models(BUILDS).contains(&id))
                     .collect(),
             })
             .collect();
         ModelsState {
             models,
-            modes: model_status(&root, builds),
+            modes: model_status(&root, BUILDS),
         }
     }
 
@@ -206,7 +219,7 @@ impl Core {
         fetch: impl FnOnce(&Path, &str, &mut dyn FnMut(Progress)) -> Result<()>,
         on_progress: &mut dyn FnMut(Progress),
     ) -> Result<ModelsState> {
-        if !modelhub::CATALOG.iter().any(|(known, _)| *known == id) {
+        if !is_builtin(id) {
             bail!("unknown model {id}");
         }
         let guard = {
@@ -229,7 +242,7 @@ impl Core {
 
     /// Delete one installed model. Refused while that model is downloading.
     pub fn delete_model(&self, id: &str) -> Result<ModelsState> {
-        if !modelhub::CATALOG.iter().any(|(known, _)| *known == id) {
+        if !is_builtin(id) {
             bail!("unknown model {id}");
         }
         let guard = {
@@ -266,10 +279,7 @@ impl Core {
             settings: s.settings.clone(),
             history: s.history.clone(),
             favorites: s.favorites.clone(),
-            models: model_status(
-                &s.models_dir(),
-                effective_builds(&s.models_dir(), s.settings.formula_builds()),
-            ),
+            models: model_status(&s.models_dir(), BUILDS),
             model_files,
             selfcheck: crate::headless(),
             pandoc: pandoc_path().is_some(),
@@ -326,13 +336,71 @@ impl Core {
         mode: Mode,
         on_progress: &mut dyn FnMut(Progress),
     ) -> Result<ModelsState> {
-        let (root, builds) = self.root_and_builds();
-        for id in mode.required_models(builds) {
-            if !modelhub::is_installed(&root, id) {
-                self.download_model(id, on_progress)?;
-            }
+        self.download_models_with(mode, modelhub::download, on_progress)
+    }
+
+    pub fn download_models_with(
+        &self,
+        mode: Mode,
+        fetch: impl Fn(&Path, &str, &mut dyn FnMut(Progress)) -> Result<()>,
+        on_progress: &mut dyn FnMut(Progress),
+    ) -> Result<ModelsState> {
+        for id in mode.required_models(BUILDS) {
+            self.ensure_model(id, &fetch, on_progress)?;
         }
         Ok(self.models_state())
+    }
+
+    /// Install `id` unless it is on disk. A download of it already running (the
+    /// first-launch download, or the model list) is waited for, not refused.
+    fn ensure_model(
+        &self,
+        id: &str,
+        fetch: &impl Fn(&Path, &str, &mut dyn FnMut(Progress)) -> Result<()>,
+        on_progress: &mut dyn FnMut(Progress),
+    ) -> Result<()> {
+        loop {
+            if modelhub::is_installed(&self.models_root(), id) {
+                return Ok(());
+            }
+            match self.download_model_with(id, fetch, on_progress) {
+                Err(e) if e.to_string().starts_with("DOWNLOAD_IN_PROGRESS") => {
+                    std::thread::sleep(std::time::Duration::from_millis(250));
+                }
+                other => return other.map(drop),
+            }
+        }
+    }
+
+    /// First launch: download every built-in model that is missing, once. Runs
+    /// again on later launches until all of them have been installed, then never.
+    /// `on_installed` gets the new state after each model.
+    pub fn prefetch_models_with(
+        &self,
+        fetch: impl Fn(&Path, &str, &mut dyn FnMut(Progress)) -> Result<()>,
+        on_progress: &mut dyn FnMut(Progress),
+        on_installed: &mut dyn FnMut(ModelsState),
+    ) -> Result<()> {
+        let marker = self.store().dir().join(PREFETCHED_MARKER);
+        if marker.exists() {
+            return Ok(());
+        }
+        for id in PREFETCH_ORDER {
+            if !modelhub::is_installed(&self.models_root(), id) {
+                self.ensure_model(id, &fetch, on_progress)?;
+                on_installed(self.models_state());
+            }
+        }
+        std::fs::write(&marker, b"")?;
+        Ok(())
+    }
+
+    pub fn prefetch_models(
+        &self,
+        on_progress: &mut dyn FnMut(Progress),
+        on_installed: &mut dyn FnMut(ModelsState),
+    ) -> Result<()> {
+        self.prefetch_models_with(modelhub::download, on_progress, on_installed)
     }
 }
 
@@ -706,7 +774,6 @@ pub fn resume_hotkey(app: AppHandle, core: State<'_, Arc<Core>>) -> Res<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ocr::FormulaModel;
 
     #[test]
     fn missing_models_are_reported_with_a_stable_code() {
@@ -723,7 +790,7 @@ mod tests {
             .recognize_bytes(&png, Some(Mode::Formula))
             .unwrap_err()
             .to_string();
-        assert_eq!(e, "MODELS_MISSING:mathcraft-formula-rec");
+        assert_eq!(e, "MODELS_MISSING:mathcraft-formula-rec-int8");
         let snap = core.snapshot();
         assert_eq!(snap.models.get("formula"), Some(&false));
         assert_eq!(snap.version, env!("CARGO_PKG_VERSION"));
@@ -738,35 +805,25 @@ mod tests {
     }
 
     #[test]
-    fn models_state_reports_presence_and_usage() {
+    fn models_state_lists_the_four_int8_models() {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::new(dir.path());
-        install_fake(
-            &dir.path().join("MathCraft/models"),
-            "mathcraft-formula-rec",
-        );
+        let root = dir.path().join("MathCraft/models");
+        // An FP32 model left on disk (by the original app, or an older Lite) is ignored.
+        install_fake(&root, "mathcraft-formula-rec");
         let state = core.models_state();
         let ids: Vec<&str> = state.models.iter().map(|m| m.id).collect();
         assert_eq!(
             ids,
             [
-                "mathcraft-formula-det",
                 "mathcraft-formula-det-int8",
-                "mathcraft-formula-rec",
                 "mathcraft-formula-rec-int8",
                 "mathcraft-text-det",
                 "mathcraft-text-rec"
             ]
         );
         let by_id = |id: &str| state.models.iter().find(|m| m.id == id).unwrap().clone();
-        assert!(by_id("mathcraft-formula-rec").installed);
-        assert!(!by_id("mathcraft-text-det").installed);
-        assert_eq!(by_id("mathcraft-formula-det").used_by, [Mode::Mixed]);
         assert_eq!(by_id("mathcraft-formula-det-int8").used_by, [Mode::Mixed]);
-        assert_eq!(
-            by_id("mathcraft-formula-rec").used_by,
-            [Mode::Formula, Mode::Mixed]
-        );
         assert_eq!(
             by_id("mathcraft-formula-rec-int8").used_by,
             [Mode::Formula, Mode::Mixed]
@@ -775,137 +832,162 @@ mod tests {
             by_id("mathcraft-text-rec").used_by,
             [Mode::Mixed, Mode::Text]
         );
+        assert_eq!(
+            by_id("mathcraft-formula-rec-int8").download_bytes,
+            24_695_733
+        );
+        assert!(!state.modes["formula"], "FP32 does not count");
+
+        install_fake(&root, "mathcraft-formula-rec-int8");
+        let state = core.models_state();
+        assert!(state.models[1].installed && !state.models[0].installed);
         assert_eq!(state.modes.get("formula"), Some(&true));
-        assert_eq!(state.modes.get("text"), Some(&false));
+        assert_eq!(state.modes.get("mixed"), Some(&false));
         assert_eq!(core.snapshot().model_files, state.models);
+        assert_eq!(core.engine().builds(), BUILDS);
+
+        // FP32 ids are no longer built-in: not downloadable or deletable from the app.
+        for id in ["mathcraft-formula-det", "mathcraft-formula-rec"] {
+            let e = core
+                .download_model_with(id, |_, _, _| Ok(()), &mut |_| {})
+                .unwrap_err();
+            assert!(e.to_string().contains("unknown model"), "{e}");
+            assert!(core.delete_model(id).is_err());
+        }
+        assert!(root.join("mathcraft-formula-rec").exists(), "left alone");
+    }
+
+    fn fake_fetch(
+        log: &std::sync::Mutex<Vec<String>>,
+    ) -> impl Fn(&Path, &str, &mut dyn FnMut(Progress)) -> Result<()> + '_ {
+        move |root, id, _| {
+            log.lock().unwrap().push(id.to_string());
+            install_fake(root, id);
+            Ok(())
+        }
     }
 
     #[test]
-    fn formula_model_setting_picks_the_recognizer() {
+    fn downloading_a_mode_fetches_its_int8_models() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path());
+        let log = std::sync::Mutex::new(Vec::new());
+        let state = core
+            .download_models_with(Mode::Formula, fake_fetch(&log), &mut |_| {})
+            .unwrap();
+        assert_eq!(*log.lock().unwrap(), ["mathcraft-formula-rec-int8"]);
+        assert!(state.modes["formula"] && !state.modes["mixed"]);
+        core.download_models_with(Mode::Mixed, fake_fetch(&log), &mut |_| {})
+            .unwrap();
+        assert_eq!(
+            *log.lock().unwrap(),
+            [
+                "mathcraft-formula-rec-int8",
+                "mathcraft-formula-det-int8",
+                "mathcraft-text-det",
+                "mathcraft-text-rec"
+            ]
+        );
+    }
+
+    #[test]
+    fn first_launch_downloads_all_four_models_once() {
         let dir = tempfile::tempdir().unwrap();
         let core = Core::new(dir.path());
         let root = dir.path().join("MathCraft/models");
-        install_fake(&root, "mathcraft-formula-rec");
-        assert!(core.models_state().modes["formula"]);
-        assert_eq!(core.engine().builds(), FormulaBuilds::default());
-
-        let mut s = core.settings();
-        s.formula_model = FormulaModel::Int8;
-        core.store().save_settings(s).unwrap();
-        // The standard model alone no longer satisfies formula mode.
-        assert!(!core.models_state().modes["formula"]);
-        assert_eq!(core.engine().builds().rec, FormulaModel::Int8);
-        let png = {
-            let img = image::RgbImage::from_pixel(8, 8, image::Rgb([255, 255, 255]));
-            let mut v = Vec::new();
-            img.write_to(&mut std::io::Cursor::new(&mut v), image::ImageFormat::Png)
-                .unwrap();
-            v
-        };
+        install_fake(&root, "mathcraft-text-det"); // already there: skipped
+        let log = std::sync::Mutex::new(Vec::new());
+        let mut states = Vec::new();
+        core.prefetch_models_with(fake_fetch(&log), &mut |_| {}, &mut |s| states.push(s))
+            .unwrap();
         assert_eq!(
-            core.recognize_bytes(&png, Some(Mode::Formula))
-                .unwrap_err()
-                .to_string(),
-            "MODELS_MISSING:mathcraft-formula-rec-int8"
+            *log.lock().unwrap(),
+            [
+                "mathcraft-formula-rec-int8",
+                "mathcraft-formula-det-int8",
+                "mathcraft-text-rec"
+            ]
         );
+        assert_eq!(states.len(), 3);
+        assert!(states[0].modes["formula"] && !states[0].modes["mixed"]);
+        assert!(states[2].modes.values().all(|ready| *ready));
 
-        // "Download what this mode needs" fetches the selected build only.
-        let mut fetched = Vec::new();
-        for id in Mode::Formula.required_models(core.settings().formula_builds()) {
-            if !modelhub::is_installed(&root, id) {
+        // Later launches leave a model the user deleted alone.
+        core.delete_model("mathcraft-text-rec").unwrap();
+        log.lock().unwrap().clear();
+        core.prefetch_models_with(fake_fetch(&log), &mut |_| {}, &mut |_| {})
+            .unwrap();
+        assert!(log.lock().unwrap().is_empty());
+        assert!(!modelhub::is_installed(&root, "mathcraft-text-rec"));
+    }
+
+    #[test]
+    fn an_unfinished_first_download_resumes_on_the_next_launch() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Core::new(dir.path());
+        let failing = |root: &Path, id: &str, _: &mut dyn FnMut(Progress)| {
+            if id == "mathcraft-text-det" {
+                return Err(anyhow!("network unreachable"));
+            }
+            install_fake(root, id);
+            Ok(())
+        };
+        let e = core
+            .prefetch_models_with(failing, &mut |_| {}, &mut |_| {})
+            .unwrap_err();
+        assert_eq!(e.to_string(), "network unreachable");
+        let log = std::sync::Mutex::new(Vec::new());
+        core.prefetch_models_with(fake_fetch(&log), &mut |_| {}, &mut |_| {})
+            .unwrap();
+        assert_eq!(
+            *log.lock().unwrap(),
+            ["mathcraft-text-det", "mathcraft-text-rec"]
+        );
+        assert!(core.models_state().modes.values().all(|ready| *ready));
+    }
+
+    #[test]
+    fn a_mode_download_waits_for_the_same_model_already_downloading() {
+        let dir = tempfile::tempdir().unwrap();
+        let core = Arc::new(Core::new(dir.path()));
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let background = {
+            let core = core.clone();
+            std::thread::spawn(move || {
                 core.download_model_with(
-                    id,
-                    |r, id, _| {
-                        fetched.push(id.to_string());
-                        install_fake(r, id);
+                    "mathcraft-formula-rec-int8",
+                    |root, id, _| {
+                        started_tx.send(()).unwrap();
+                        release_rx.recv().unwrap();
+                        install_fake(root, id);
                         Ok(())
                     },
                     &mut |_| {},
                 )
                 .unwrap();
-            }
-        }
-        assert_eq!(fetched, ["mathcraft-formula-rec-int8"]);
-        assert!(core.models_state().modes["formula"]);
-    }
-
-    #[test]
-    fn either_formula_detector_serves_mixed_mode() {
-        use FormulaModel::{Int8, Standard};
-        let dir = tempfile::tempdir().unwrap();
-        let core = Core::new(dir.path());
-        let root = dir.path().join("MathCraft/models");
-        for id in [
-            "mathcraft-formula-det-int8",
-            "mathcraft-formula-rec",
-            "mathcraft-text-det",
-            "mathcraft-text-rec",
-        ] {
-            install_fake(&root, id);
-        }
-        let builds = |det, rec| FormulaBuilds { det, rec };
-
-        // The standard detector is selected (the default) but only the Int8 one is
-        // on disk: mixed mode (and PDF recognition) uses it instead of asking for a download.
-        assert_eq!(core.settings().det_model, Standard);
-        assert!(core.models_state().modes["mixed"]);
-        assert!(core.snapshot().models["mixed"]);
-        assert_eq!(core.engine().builds(), builds(Int8, Standard));
-        // What download_models(Mixed) would fetch, recording the ids instead.
-        fn fetch(core: &Core, fetched: &mut Vec<String>) {
-            let (root, builds) = core.root_and_builds();
-            for id in Mode::Mixed.required_models(builds) {
-                if !modelhub::is_installed(&root, id) {
-                    core.download_model_with(
-                        id,
-                        |r, id, _| {
-                            fetched.push(id.to_string());
-                            install_fake(r, id);
-                            Ok(())
-                        },
-                        &mut |_| {},
-                    )
-                    .unwrap();
-                }
-            }
-        }
-        let mut fetched = Vec::new();
-        fetch(&core, &mut fetched);
-        assert!(fetched.is_empty(), "nothing to download: {fetched:?}");
-
-        // Once the selected detector is installed too, it is preferred.
-        install_fake(&root, "mathcraft-formula-det");
-        assert_eq!(core.engine().builds(), builds(Standard, Standard));
-
-        // Selecting Int8 switches to it; deleting it falls back to the standard one.
-        let mut s = core.settings();
-        s.det_model = Int8;
-        core.store().save_settings(s).unwrap();
-        assert_eq!(core.engine().builds(), builds(Int8, Standard));
-        core.delete_model("mathcraft-formula-det-int8").unwrap();
-        assert!(core.models_state().modes["mixed"]);
-        assert_eq!(core.engine().builds(), builds(Standard, Standard));
-
-        // With neither detector installed, the selected one is missing and downloaded.
-        core.delete_model("mathcraft-formula-det").unwrap();
-        let modes = core.models_state().modes;
-        assert!(!modes["mixed"] && modes["formula"] && modes["text"]);
-        let png = {
-            let img = image::RgbImage::from_pixel(8, 8, image::Rgb([255, 255, 255]));
-            let mut v = Vec::new();
-            img.write_to(&mut std::io::Cursor::new(&mut v), image::ImageFormat::Png)
-                .unwrap();
-            v
+            })
         };
-        assert_eq!(
-            core.recognize_bytes(&png, Some(Mode::Mixed))
-                .unwrap_err()
-                .to_string(),
-            "MODELS_MISSING:mathcraft-formula-det-int8"
+        started_rx.recv().unwrap();
+        let waiter = {
+            let core = core.clone();
+            std::thread::spawn(move || {
+                let log = std::sync::Mutex::new(Vec::new());
+                let state = core
+                    .download_models_with(Mode::Formula, fake_fetch(&log), &mut |_| {})
+                    .unwrap();
+                (state.modes["formula"], log.into_inner().unwrap())
+            })
+        };
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        release_tx.send(()).unwrap();
+        background.join().unwrap();
+        let (ready, fetched) = waiter.join().unwrap();
+        assert!(ready);
+        assert!(
+            fetched.is_empty(),
+            "waited instead of downloading: {fetched:?}"
         );
-        fetch(&core, &mut fetched);
-        assert_eq!(fetched, ["mathcraft-formula-det-int8"]);
-        assert!(core.models_state().modes["mixed"]);
     }
 
     #[test]
@@ -923,7 +1005,7 @@ mod tests {
             .download_model_with(
                 "mathcraft-text-det",
                 |root, id, _| {
-                    assert!(core.models_state().models[4].downloading);
+                    assert!(core.models_state().models[2].downloading);
                     let again = core.download_model_with(id, |_, _, _| Ok(()), &mut |_| {});
                     assert_eq!(
                         again.unwrap_err().to_string(),
@@ -935,7 +1017,7 @@ mod tests {
                 &mut progress,
             )
             .unwrap();
-        assert!(state.models[4].installed && !state.models[4].downloading);
+        assert!(state.models[2].installed && !state.models[2].downloading);
 
         // A failed download releases the model so it can be retried.
         let failed = core.download_model_with(
@@ -944,7 +1026,7 @@ mod tests {
             &mut progress,
         );
         assert!(failed.is_err());
-        assert!(!core.models_state().models[5].downloading);
+        assert!(!core.models_state().models[3].downloading);
         assert!(
             core.download_model_with(
                 "mathcraft-text-rec",
@@ -969,8 +1051,8 @@ mod tests {
         }
         assert!(core.models_state().modes["text"]);
         let state = core.delete_model("mathcraft-text-det").unwrap();
-        assert!(!state.models[4].installed && !state.models[4].downloading);
-        assert!(state.models[5].installed, "other models are untouched");
+        assert!(!state.models[2].installed && !state.models[2].downloading);
+        assert!(state.models[3].installed, "other models are untouched");
         assert!(!state.modes["text"]);
         assert!(
             core.delete_model("mathcraft-text-det").is_ok(),

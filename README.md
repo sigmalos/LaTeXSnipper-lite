@@ -52,7 +52,7 @@ sudo apt install ./latexsnipper-lite_<版本>_amd64.deb
 Debian 包依赖 `libwebkit2gtk-4.1-0`、`libgtk-3-0`、`libayatana-appindicator3-1`，安装时由 apt 自动补齐。数据保存在 `~/.local/share/latexsnipper-lite`（遵循 `XDG_DATA_HOME`）。Linux 版同样没有截图识别，可以粘贴、拖入或导入图片。
 
 > [!NOTE]
-> 第一次识别时应用会提示下载所需模型（只用公式识别约 104 MB）。在 macOS 上，Lite 可以使用原版已下载的模型。
+> 第一次打开应用时，它会在后台自动下载全部四个识别模型（共约 62 MB），先下载公式识别，状态栏显示「正在下载模型…」。没有联网时，第一次识别会提示下载所需的模型。
 
 ## 快速上手
 
@@ -102,20 +102,18 @@ Debian 包依赖 `libwebkit2gtk-4.1-0`、`libgtk-3-0`、`libayatana-appindicator
 
 ## 识别模型
 
-内置 MathCraft 使用以下模型，每个文件都会校验 SHA-256。公式检测和公式识别各有标准（FP32）和 Int8 两个版本，按设置各只需下载其中一个：
+内置 MathCraft 使用以下四个模型，每个文件都会校验 SHA-256。公式检测和公式识别都是 Int8 量化版本，体积小、在 CPU 上更快：
 
-| 模型 | 用于 | 下载大小 | 下载来源 |
+| 模型 | 用于 | 下载大小 | 来源 |
 |---|---|---|---|
-| 公式检测 | 混合 | 64 MB | [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) |
-| 公式检测(Int8) | 混合 | 20 MB | [Gitee](https://gitee.com/sigmalyj/mathcraft-lite/releases) |
-| 公式识别 | 公式、混合 | 104 MB | [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) |
-| 公式识别(Int8) | 公式、混合 | 24 MB | [Gitee](https://gitee.com/sigmalyj/mathcraft-lite/releases) |
+| 公式检测 | 混合 | 20 MB | [Gitee](https://gitee.com/sigmalyj/mathcraft-lite/releases) |
+| 公式识别 | 公式、混合 | 24 MB | [Gitee](https://gitee.com/sigmalyj/mathcraft-lite/releases) |
 | 文字检测 | 混合、纯文字 | 4.3 MB | [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) |
 | 文字识别 | 混合、纯文字 | 13 MB | [MathCraft-Models](https://github.com/SakuraMathcraft/MathCraft-Models/releases) |
 
-在「设置 → 识别后端 → 内置 MathCraft」中可以查看每个模型的状态，并单独下载、重新下载或删除。改动立即生效，不需要重启。
+第一次打开应用时会自动下载这四个模型；之后在「设置 → 识别后端 → 内置 MathCraft」中可以查看每个模型是否已下载，单独下载、重新下载或删除。删除的模型不会再被自动下载，需要时会在识别前提示。
 
-「公式检测」和「公式检测(Int8)」、「公式识别」和「公式识别(Int8)」右侧各有一个「选用」按钮。每一对只能选其一：公式检测的选择决定混合识别用哪个版本，公式识别的选择决定公式和混合识别用哪个版本。两对互不影响，默认都选用标准版，点「保存」后生效。Int8 是同一模型的量化版本：公式识别(Int8) 体积约为标准版的四分之一，在 CPU 上识别快约一倍，但个别符号的识别准确率略低；公式检测(Int8) 体积约为标准版的三分之一，混合识别耗时约减少四分之一，个别公式的检测框可能不如标准版准确。鼠标移到 Int8 旁的问号上可以看到这些说明。公式检测的两个版本只要下载了其中一个，混合识别和 PDF 识别就能使用：所选版本未下载而另一个已下载时，会先用已下载的那个。其余情况下，所选版本未下载时，识别前会提示下载。
+1.4.0 及更早的版本使用标准（FP32）的公式检测和公式识别模型，下载大小分别为 64 MB 和 104 MB。升级后它们不再使用，也不会显示在设置中；它们所在的 `mathcraft-formula-det`、`mathcraft-formula-rec` 文件夹可以手动删除。macOS 上原版 LaTeXSnipper 和 Word / PowerPoint 插件仍使用 `mathcraft-formula-rec`，与原版共用数据目录时请保留它。
 
 ### GPU 加速（Windows / Linux）
 

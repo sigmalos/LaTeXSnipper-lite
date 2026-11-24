@@ -30,30 +30,17 @@ import { renderInto, toHtmlDocument, toMathML, toSvg } from "./lib/math";
 const DEFAULT_HOTKEY = "CommandOrControl+F";
 /** Installed (unpacked) size of each model, for the "needs a download" prompt. */
 const INSTALLED_BYTES: Record<string, number> = {
-  "mathcraft-formula-det": 80311115,
   "mathcraft-formula-det-int8": 25255507,
-  "mathcraft-formula-rec": 117658447,
   "mathcraft-formula-rec-int8": 33148939,
   "mathcraft-text-det": 4826518,
   "mathcraft-text-rec": 16654768,
 };
-const isInstalled = (id: string) => snap.model_files?.some((m) => m.id === id && m.installed) ?? false;
-const DET_ID = { standard: "mathcraft-formula-det", int8: "mathcraft-formula-det-int8" } as const;
-/**
- * The formula detector mixed mode uses (mirrors effective_builds): the selected one,
- * or the other build when only that one is installed.
- */
-function effectiveDet(s: Settings): Settings["det_model"] {
-  const other = s.det_model === "int8" ? "standard" : "int8";
-  return !isInstalled(DET_ID[s.det_model]) && isInstalled(DET_ID[other]) ? other : s.det_model;
-}
-/** Models a recognition type loads (mirrors Mode::required_models with effective builds). */
-function requiredModels(mode: Mode, s: Settings): string[] {
-  const rec = s.formula_model === "int8" ? "mathcraft-formula-rec-int8" : "mathcraft-formula-rec";
+/** Models a recognition type loads (mirrors Mode::required_models with the Int8 builds). */
+function requiredModels(mode: Mode): string[] {
   const text = ["mathcraft-text-det", "mathcraft-text-rec"];
-  if (mode === "formula") return [rec];
+  if (mode === "formula") return ["mathcraft-formula-rec-int8"];
   if (mode === "text") return text;
-  return [DET_ID[effectiveDet(s)], rec, ...text];
+  return ["mathcraft-formula-det-int8", "mathcraft-formula-rec-int8", ...text];
 }
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -95,7 +82,14 @@ function renderStatus(): void {
   const s = snap.settings;
   const model = s.backend === "external" ? `${t("外部模型")} ${s.external_model}` : `MathCraft ${modeLabel(s.mode)}`;
   const ready = s.backend === "external" || snap.models[s.mode];
-  const [cls, state] = busy ? ["busy", t("识别中…")] : ready ? ["", t("就绪")] : ["need", t("需下载模型")];
+  const fetching = s.backend === "builtin" && (snap.model_files ?? []).some((m) => m.downloading);
+  const [cls, state] = busy
+    ? ["busy", t("识别中…")]
+    : ready
+      ? ["", t("就绪")]
+      : fetching
+        ? ["busy", t("正在下载模型…")]
+        : ["need", t("需下载模型")];
   $("status").innerHTML = "";
   const dot = document.createElement("span");
   dot.className = `dot ${cls}`;
@@ -434,7 +428,7 @@ function openModels(mode: Mode): void {
   downloadMode = mode;
   $("models-text").textContent = t("{mode}识别需要下载 MathCraft 模型（约 {size}），只需下载一次。", {
     mode: modeLabel(mode),
-    size: formatBytes(requiredModels(mode, snap.settings).reduce((sum, id) => sum + INSTALLED_BYTES[id], 0)),
+    size: formatBytes(requiredModels(mode).reduce((sum, id) => sum + INSTALLED_BYTES[id], 0)),
   });
   $("models-status").textContent = "";
   $("models-progress").hidden = true;
@@ -650,74 +644,12 @@ modeList.addEventListener("click", (e) => e.stopPropagation());
 // ------------------------------------------------------------------ model files
 
 const MODEL_NAMES: [string, string][] = [
-  ["mathcraft-formula-det", "公式检测"],
-  ["mathcraft-formula-det-int8", "公式检测(Int8)"],
-  ["mathcraft-formula-rec", "公式识别"],
-  ["mathcraft-formula-rec-int8", "公式识别(Int8)"],
+  ["mathcraft-formula-det-int8", "公式检测"],
+  ["mathcraft-formula-rec-int8", "公式识别"],
   ["mathcraft-text-det", "文字检测"],
   ["mathcraft-text-rec", "文字识别"],
 ];
-type Build = Settings["formula_model"];
-type BuildKey = "det_model" | "formula_model";
-/** Models that come in two builds: the setting that picks between them, and which build each is. */
-const BUILDS: Record<string, { key: BuildKey; build: Build }> = {
-  "mathcraft-formula-det": { key: "det_model", build: "standard" },
-  "mathcraft-formula-det-int8": { key: "det_model", build: "int8" },
-  "mathcraft-formula-rec": { key: "formula_model", build: "standard" },
-  "mathcraft-formula-rec-int8": { key: "formula_model", build: "int8" },
-};
 const modelName = (id: string) => t(MODEL_NAMES.find(([key]) => key === id)?.[1] ?? id);
-/** The builds picked in the open Settings form; saved only with 保存. */
-const buildDraft: Record<BuildKey, Build> = { det_model: "standard", formula_model: "standard" };
-
-/** What the "?" beside each Int8 row says about it, compared with the FP32 build. */
-const INT8_TIPS: Record<BuildKey, { pros: string[]; cons: string[] }> = {
-  formula_model: {
-    pros: ["体积约为标准版的 1/4，占用内存更少", "在 CPU 上识别快约一倍"],
-    cons: ["个别符号的识别准确率略低于标准版"],
-  },
-  det_model: {
-    pros: ["体积约为标准版的 1/3，占用内存更少", "在 CPU 上检测更快，混合识别耗时约减少 1/4"],
-    cons: ["个别公式的检测框可能不如标准版准确"],
-  },
-};
-
-/** The "?" next to an Int8 row: hovering or focusing it shows how Int8 differs from FP32. */
-function int8Help(key: BuildKey): HTMLElement {
-  const tipId = `int8-tip-${key === "det_model" ? "det" : "rec"}`;
-  const wrap = document.createElement("span");
-  wrap.className = "model-help";
-  const btn = document.createElement("button");
-  btn.type = "button";
-  btn.textContent = "?";
-  btn.setAttribute("aria-label", t("Int8 与标准模型有何不同"));
-  btn.setAttribute("aria-describedby", tipId);
-  const tip = document.createElement("div");
-  tip.id = tipId;
-  tip.className = "model-tip";
-  tip.setAttribute("role", "tooltip");
-  const intro = document.createElement("p");
-  intro.textContent = t("Int8 是标准模型（FP32）的量化版本，权重以 8 位整数存储。");
-  const section = (title: string, cls: string, items: string[]) => {
-    const h = document.createElement("strong");
-    h.className = cls;
-    h.textContent = title;
-    const ul = document.createElement("ul");
-    for (const item of items) ul.appendChild(document.createElement("li")).textContent = item;
-    return [h, ul];
-  };
-  const outro = document.createElement("p");
-  outro.className = "model-tip-advice";
-  outro.textContent = t("看重准确率选标准版，看重速度和体积选 Int8。");
-  tip.append(
-    intro,
-    ...section(t("优点"), "pro", INT8_TIPS[key].pros.map((s) => t(s))),
-    ...section(t("缺点"), "con", INT8_TIPS[key].cons.map((s) => t(s))),
-    outro,
-  );
-  wrap.append(btn, tip);
-  return wrap;
-}
 
 type RowState = { downloading: boolean; deleting: boolean; done: number; total: number; failed: string | null };
 const rowStates = new Map<string, RowState>();
@@ -764,13 +696,6 @@ function renderModelRow(li: HTMLLIElement, m: ModelInfo): void {
   del.textContent = t("删除");
   del.hidden = !m.installed;
   del.disabled = s.downloading || s.deleting;
-  // The two formula recognizers each get a 选用 button; picking one unpicks the other.
-  const pick = li.querySelector<HTMLInputElement>(".model-pick input");
-  if (pick) {
-    const { key, build } = BUILDS[m.id];
-    pick.checked = buildDraft[key] === build;
-    pick.nextElementSibling!.textContent = t(pick.checked ? "已选用" : "选用");
-  }
   const bar = li.querySelector<HTMLProgressElement>("progress")!;
   bar.hidden = !s.downloading;
   if (pct === null) bar.removeAttribute("value");
@@ -790,22 +715,11 @@ function renderModelList(): void {
       li.dataset.model = m.id;
       li.title = m.id;
       const uses = m.used_by.map(modeLabel).join(getLang() === "zh" ? "、" : ", ");
-      const pickable = BUILDS[m.id];
       li.innerHTML = `<div><div class="model-title"><span class="model-name"></span></div><span class="model-use"></span></div>
-        <span class="model-pick">${pickable ? `<label><input type="radio" name="${pickable.key}" value="${pickable.build}" /><span></span></label>` : ""}</span>
         <span class="model-size"></span><span class="model-state" aria-live="polite"></span>
         <div class="model-actions"><button type="button" class="model-download"></button><button type="button" class="model-delete btn quiet small danger"></button></div>
         <progress max="100"></progress>`;
       li.querySelector(".model-name")!.textContent = modelName(m.id);
-      if (pickable?.build === "int8") li.querySelector(".model-title")!.appendChild(int8Help(pickable.key));
-      const pick = li.querySelector<HTMLInputElement>(".model-pick input");
-      if (pick) {
-        pick.setAttribute("aria-label", t("选用“{name}”", { name: modelName(m.id) }));
-        pick.addEventListener("change", () => {
-          buildDraft[pickable!.key] = pickable!.build;
-          for (const id of Object.keys(BUILDS)) refreshModelRow(id);
-        });
-      }
       li.querySelector(".model-use")!.textContent = t("用于：{modes}", { modes: uses });
       li.querySelector(".model-size")!.textContent = formatBytes(m.download_bytes);
       li.querySelector(".model-download")!.addEventListener("click", () => downloadOne(m.id));
@@ -852,12 +766,7 @@ async function deleteOne(id: string): Promise<void> {
   if (s.downloading || s.deleting) return;
   const modes = m.used_by.map(modeLabel).join(getLang() === "zh" ? "、" : ", ");
   const vars = { name: modelName(id), modes, size: formatBytes(m.download_bytes) };
-  // The build not in use: not selected, and for the detector not standing in for a missing selected one.
-  const inUse = (key: BuildKey) => (key === "det_model" ? effectiveDet(snap.settings) : snap.settings[key]);
-  const unused = id in BUILDS && BUILDS[id].build !== inUse(BUILDS[id].key);
-  const question = unused
-    ? t("删除“{name}”模型？需要时可重新下载（{size}）。", vars)
-    : t("删除“{name}”模型？{modes}识别将无法使用，需要时可重新下载（{size}）。", vars);
+  const question = t("删除“{name}”模型？{modes}识别将无法使用，需要时可重新下载（{size}）。", vars);
   if ((await ask(question, t("删除"), undefined, true)) === null) return;
   s.deleting = true;
   s.failed = null;
@@ -892,8 +801,6 @@ function readSettingsForm(): Settings {
     ...snap.settings,
     mode: snap.settings.mode, // chosen in the main window's 识别类型 dropdown
     backend: fd.get("backend") as Settings["backend"],
-    formula_model: buildDraft.formula_model,
-    det_model: buildDraft.det_model,
     theme: fd.get("theme") as Settings["theme"],
     language: fd.get("language") as Settings["language"],
     pdf_dpi: Number(fd.get("pdf_dpi")) || 200,
@@ -982,8 +889,6 @@ function openSettings(): void {
   $<HTMLInputElement>("data-dir").value = snap.data_dir;
   $("version").textContent = `LaTeXSnipper ${snap.version}`;
   $("test-result").textContent = "";
-  buildDraft.formula_model = s.formula_model;
-  buildDraft.det_model = s.det_model;
   renderModelList();
   // Pick up files added or removed outside the app since the last look.
   api.listModels().then(applyModels).catch(() => undefined);
@@ -1017,13 +922,9 @@ $<HTMLDialogElement>("settings-dialog").addEventListener("close", async () => {
     return;
   }
   try {
-    const before = snap.settings;
     snap.settings = await api.saveSettings(readSettingsForm());
     applyTheme(snap.settings.theme);
     applyLanguage();
-    // Which recognition types are ready depends on the selected formula builds.
-    if (snap.settings.formula_model !== before.formula_model || snap.settings.det_model !== before.det_model)
-      applyModels(await api.listModels());
     toast(t("设置已保存"));
   } catch (e) {
     applyTheme(snap.settings.theme);
@@ -1436,7 +1337,14 @@ async function boot(): Promise<void> {
   await api.onOpenSettings(openSettings);
   await api.onUpdateStatus(setUpdate);
   setUpdate(await api.updateStatus());
+  // The first launch downloads all four models in the background.
+  await api.onModelsState(applyModels);
   await api.onProgress((p) => {
+    const file = snap.model_files.find((m) => m.id === p.model);
+    if (file && !file.installed && !file.downloading) {
+      file.downloading = true;
+      renderStatus();
+    }
     const s = rowStates.get(p.model);
     if (!s) return;
     s.downloading = true;

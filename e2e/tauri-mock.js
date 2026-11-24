@@ -6,33 +6,17 @@
   const listeners = new Map(); // event -> [callbackId]
   let nextId = 1;
 
-  const ALL_MODELS = [
-    "mathcraft-formula-det",
-    "mathcraft-formula-det-int8",
-    "mathcraft-formula-rec",
-    "mathcraft-formula-rec-int8",
-    "mathcraft-text-det",
-    "mathcraft-text-rec",
-  ];
-  const FORMULA_REC = { standard: "mathcraft-formula-rec", int8: "mathcraft-formula-rec-int8" };
-  const FORMULA_DET = { standard: "mathcraft-formula-det", int8: "mathcraft-formula-det-int8" };
-  // Mirrors effective_builds: the other detector build stands in when only it is installed.
-  const effectiveDet = (det) => {
-    const other = det === "int8" ? "standard" : "int8";
-    return !state.installed.has(FORMULA_DET[det]) && state.installed.has(FORMULA_DET[other]) ? other : det;
-  };
-  // Models each recognition type loads with the given formula recognizer and detector.
-  const required = (formula = state.settings.formula_model, det = effectiveDet(state.settings.det_model)) => ({
-    formula: [FORMULA_REC[formula]],
-    mixed: [FORMULA_DET[det], FORMULA_REC[formula], "mathcraft-text-det", "mathcraft-text-rec"],
+  // The four built-in models (BUILTIN_MODELS), all Int8 for the formula models.
+  const ALL_MODELS = ["mathcraft-formula-det-int8", "mathcraft-formula-rec-int8", "mathcraft-text-det", "mathcraft-text-rec"];
+  // Models each recognition type loads (Mode::required_models with the Int8 builds).
+  const required = () => ({
+    formula: ["mathcraft-formula-rec-int8"],
+    mixed: ["mathcraft-formula-det-int8", "mathcraft-formula-rec-int8", "mathcraft-text-det", "mathcraft-text-rec"],
     text: ["mathcraft-text-det", "mathcraft-text-rec"],
   });
-  const BUILDS = ["standard", "int8"];
-  const usesModel = (mode, id) => BUILDS.some((f) => BUILDS.some((d) => required(f, d)[mode].includes(id)));
+  const usesModel = (mode, id) => required()[mode].includes(id);
   const SIZES = {
-    "mathcraft-formula-det": 67531517,
     "mathcraft-formula-det-int8": 20537681,
-    "mathcraft-formula-rec": 108795631,
     "mathcraft-formula-rec-int8": 24695733,
     "mathcraft-text-det": 4533780,
     "mathcraft-text-rec": 14102746,
@@ -42,8 +26,6 @@
     settings: {
       mode: "formula",
       backend: "builtin",
-      formula_model: "standard",
-      det_model: "standard",
       theme: "light",
       language: "zh",
       hotkey: "CommandOrControl+F",
@@ -62,7 +44,7 @@
     // Seeds may describe ready recognition types ({formula: true, ...}); derive the files.
     installed: new Set(
       seed.installedModels ??
-        (seed.models ? ALL_MODELS.filter((id) => Object.entries(seed.models).some(([m, on]) => on && required(seed.settings?.formula_model ?? "standard", seed.settings?.det_model ?? "standard")[m].includes(id))) : ALL_MODELS),
+        (seed.models ? ALL_MODELS.filter((id) => Object.entries(seed.models).some(([m, on]) => on && required()[m].includes(id))) : ALL_MODELS),
     ),
     downloading: new Set(),
     // ids whose next download fails once (or every download when downloadFails is true)
@@ -127,6 +109,7 @@
     for (const id of listeners.get(event) || []) callbacks.get(id)?.({ event, id, payload });
   }
   state.emit = emit;
+  state.modelsState = modelsState;
 
   function nextOutcome(mode) {
     const o = state.outcomes.length ? state.outcomes.shift() : { text: "x^{2}" };

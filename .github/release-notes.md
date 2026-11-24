@@ -29,7 +29,7 @@
 - **Windows 上代替截图识别**：先用系统自带的 **Win + Shift + S** 截图，再回到应用按 **Ctrl + V** 粘贴识别。
 - **Linux**：`sudo apt install ./latexsnipper-lite_{{VERSION}}_amd64.deb`，依赖的 WebKitGTK 等库由 apt 自动安装。
 - **Office 插件**：单独安装，不依赖桌面端。打开 DMG 把「LaTeXSnipper Office」拖进「应用程序」，打开后点「安装」，步骤见 `office_plugin/README.md`。
-- 识别模型不在安装包里，第一次识别时按需下载（只用公式识别时，标准版约 104 MB，Int8 版约 24 MB），并逐文件校验 SHA-256。
+- 识别模型不在安装包里，第一次打开应用时自动在后台下载四个模型（共约 62 MB），并逐文件校验 SHA-256。
 
 ## 升级
 

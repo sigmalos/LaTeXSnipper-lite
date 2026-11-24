@@ -19,12 +19,14 @@ MODELS=${LATEXSNIPPER_MODELS:-$DEFAULT_MODELS}
 tmpdir() { mktemp -d 2>/dev/null || mktemp -d -t latexsnipper; }
 
 echo "== [$OS] headless recognition"
-if [ -f "$MODELS/mathcraft-formula-rec/encoder_model.onnx" ]; then
+if [ -f "$MODELS/mathcraft-formula-rec-int8/encoder_model.onnx" ]; then
   DATA=$(tmpdir); mkdir -p "$DATA/MathCraft"
   if [ "$OS" = windows ]; then cp -R "$MODELS" "$DATA/MathCraft/models"; else ln -s "$MODELS" "$DATA/MathCraft/models"; fi
   OUT=$(LATEXSNIPPER_DATA_DIR="$DATA" "$BIN" --selftest "$FIX/frac.png" | tr -d '\r')
-  EXPECTED=$(cd "$FIX" && node -p "require('./python_reference.json').frac.text")
-  [ "$OUT" = "$EXPECTED" ] || { printf "FAIL: got %s\n  want %s\n" "$OUT" "$EXPECTED"; exit 1; }
+  # The app loads the Int8 recognizer, which can differ from the FP32 Python
+  # reference in a symbol, so the fraction up to "=" must match exactly.
+  EXPECTED='\frac { a + b } { c ^ { 2 } } ='
+  case "$OUT" in "$EXPECTED"*) ;; *) printf "FAIL: got %s\n  want %s…\n" "$OUT" "$EXPECTED"; exit 1 ;; esac
   printf "ok: %s\n" "$OUT"
 elif [ "$REQUIRE_MODELS" = --require-models ]; then
   echo "FAIL: models not found under $MODELS"; exit 1
